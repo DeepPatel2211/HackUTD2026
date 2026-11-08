@@ -291,6 +291,8 @@ export default function ControlRoom() {
         busy={busy}
         onDataset={changeDataset}
         onNavigate={navigate}
+        people={people}
+        assignments={assignments}
         onReset={reset}
         onBack={() =>
           navigate(
@@ -508,6 +510,10 @@ export default function ControlRoom() {
               onAssign={(systemId, operatorId) =>
                 setAssignments((all) => ({ ...all, [systemId]: operatorId }))
               }
+              onView={(systemId) => {
+                navigate({ systemId });
+                setOperatorsOpen(false);
+              }}
               onClose={() => setOperatorsOpen(false)}
             />
           )}

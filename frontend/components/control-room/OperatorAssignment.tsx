@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BellRing, Check, UserRound, X } from "lucide-react";
+import { BellRing, Check, ChevronRight, UserRound, X } from "lucide-react";
 import type { Dashboard } from "../../lib/types";
 import { operatorById, type Operator } from "../../lib/operators";
 
@@ -13,12 +13,14 @@ export default function OperatorAssignment({
   people,
   assignments,
   onAssign,
+  onView,
   onClose,
 }: {
   data: Dashboard;
   people: Operator[];
   assignments: Record<string, number>;
   onAssign: (systemId: string, operatorId: number) => void;
+  onView: (systemId: string) => void;
   onClose: () => void;
 }) {
   const [paged, setPaged] = useState<Record<string, string>>({});
@@ -57,7 +59,14 @@ export default function OperatorAssignment({
           return (
             <div className="operator-row" key={system.id}>
               <div className="operator-system">
-                <b>System {system.id}</b>
+                <button
+                  className="system-link"
+                  onClick={() => onView(system.id)}
+                  title={`Show System ${system.id} in the 3D view`}
+                >
+                  System {system.id}
+                  <ChevronRight size={12} />
+                </button>
                 <small>
                   {system.facilities.length} facilities
                   {open > 0 ? ` · ${open} active` : " · clear"}

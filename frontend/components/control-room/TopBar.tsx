@@ -5,6 +5,7 @@ import {
   Waves,
 } from "lucide-react";
 import type { Dashboard, Navigation } from "../../lib/types";
+import type { Operator } from "../../lib/operators";
 import { useState } from "react";
 import { timestamp } from "../../lib/operational-status";
 
@@ -18,6 +19,8 @@ export default function TopBar({
   onNavigate,
   onReset,
   onBack,
+  people,
+  assignments,
 }: {
   datasets: string[];
   dataset: string;
@@ -28,7 +31,15 @@ export default function TopBar({
   onNavigate: (nav: Navigation) => void;
   onReset: () => void;
   onBack: () => void;
+  people: Operator[];
+  assignments: Record<string, number>;
 }) {
+  // assignments maps system -> operator, so viewing by operator needs the
+  // reverse lookup. Operator 1 covers the first system, 2 the second, and so on.
+  const systemForOperator: Record<number, string> = {};
+  for (const [systemId, operatorId] of Object.entries(assignments)) {
+    systemForOperator[operatorId] = systemId;
+  }
   const [notice, setNotice] = useState("");
   function exportSnapshot() {
     if (!data) return;
@@ -52,6 +63,29 @@ export default function TopBar({
           NightShift <em>AI</em>
         </span>
       </button>
+      <label className="operator-control"><span className="view-caption">Operator</span>
+        <select
+          aria-label="View the system assigned to an operator"
+          disabled={!data}
+          value={navigation.systemId ? assignments[navigation.systemId] ?? "" : ""}
+          onChange={(e) => {
+            const id = Number(e.target.value);
+            // Clearing the operator widens the view back to the whole field.
+            onNavigate(
+              e.target.value && systemForOperator[id]
+                ? { systemId: systemForOperator[id] }
+                : {},
+            );
+          }}
+        >
+          <option value="">All operators</option>
+          {people.map((person) => (
+            <option key={person.id} value={person.id}>
+              #{person.id} {person.name} · System {systemForOperator[person.id] ?? "—"}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="system-control"><span className="view-caption">3D view</span>
         <select aria-label="Navigate to system" value={navigation.systemId || ''} disabled={!data} onChange={e => onNavigate(e.target.value ? { systemId: e.target.value } : {})}>
           <option value="">All systems</option>{data?.systems.map(system => <option key={system.id} value={system.id}>System {system.id}</option>)}
