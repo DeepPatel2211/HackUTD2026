@@ -1,2 +1,15 @@
+[project]
+name = "nightshift-ai"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+# Vercel prefers this manifest over requirements.txt when it is present.
+dependencies = [
+    "fastapi==0.162.2",
+    "uvicorn==0.54.0",
+    "httpx==0.28.1",
+    "numpy>=2.0,<3",
+    "scipy>=1.15,<2",
+]
+
 [tool.vercel]
 entrypoint = "backend.main:app"
