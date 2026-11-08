@@ -1,26 +1,24 @@
 "use client";
 import { useEffect, useMemo } from 'react';
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
+import { CanvasTexture, SRGBColorSpace } from 'three';
 
-/** An opaque textured floor keeps the grid beneath solids and avoids shader-grid overdraw. */
-export default function GroundPlane({ size }: { size: number }) {
+/** A soft light pool anchors the real geometry without a tiled foreground grid. */
+export default function GroundPlane({ size, center = [0, 0], radius = size / 4 }: { size: number; center?: [number, number]; radius?: number }) {
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 320;
     const context = canvas.getContext('2d')!;
-    context.fillStyle = '#111f2b'; context.fillRect(0,0,320,320);
-    for(let i=0;i<=5;i++) {
-      context.strokeStyle = i===0 || i===5 ? '#1f3442' : '#192c39';
-      context.lineWidth = i===0 || i===5 ? 1.5 : .8;
-      context.beginPath(); context.moveTo(i*64,0); context.lineTo(i*64,320); context.stroke();
-      context.beginPath(); context.moveTo(0,i*64); context.lineTo(320,i*64); context.stroke();
-    }
+    const cx = 160 + center[0] / size * 320;
+    const cy = 160 - center[1] / size * 320;
+    const gradient = context.createRadialGradient(cx,cy,0,cx,cy,radius / size * 320);
+    gradient.addColorStop(0,'#344a58');
+    gradient.addColorStop(.5,'#293e4c');
+    gradient.addColorStop(1,'#192c39');
+    context.fillStyle = gradient; context.fillRect(0,0,320,320);
     const map = new CanvasTexture(canvas);
     map.colorSpace = SRGBColorSpace;
-    map.wrapS = map.wrapT = RepeatWrapping;
-    map.repeat.set(size/20,size/20);
     map.anisotropy = 4;
     return map;
-  },[size]);
+  },[size, center[0], center[1], radius]);
   useEffect(() => () => texture.dispose(),[texture]);
   return <group><mesh rotation={[-Math.PI/2,0,0]} position={[0,-3.51,0]}>
     <planeGeometry args={[size,size]}/>

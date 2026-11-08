@@ -154,6 +154,7 @@ export default function DigitalTwinScene({
     return () => window.removeEventListener("nightshift:retry-renderer", retry);
   }, []);
   const labelPortal = useRef<HTMLDivElement>(null!);
+  const visibleSystem = graph.systems.find(system => system.system.id === navigation.systemId);
   return (
     <SceneBoundary key={rendererKey}>
       <div
@@ -181,13 +182,13 @@ export default function DigitalTwinScene({
           fallback={<Unavailable />}
         >
           <LabelPortal.Provider value={labelPortal}>
-            <color attach="background" args={["#111f2b"]} />
+            <color attach="background" args={["#1a2a36"]} />
             <fog
               attach="fog"
-              args={["#111f2b", graph.radius * 5, graph.radius * 12]}
+              args={["#1a2a36", graph.radius * 5, graph.radius * 12]}
             />
             <SceneLighting graph={graph} navigation={navigation}/>
-            <GroundPlane size={graph.radius * 12}/>
+            <GroundPlane size={graph.radius * 12} center={visibleSystem ? [visibleSystem.position[0], visibleSystem.position[2]] : [0, 0]} radius={visibleSystem ? Math.max(visibleSystem.width, visibleSystem.depth) * 1.8 : graph.radius * 2}/>
             {graph.systems.filter(system => !navigation.systemId || system.system.id === navigation.systemId).map((system) => (
               <SystemScene
                 key={system.system.id}

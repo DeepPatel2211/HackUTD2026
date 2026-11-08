@@ -27,7 +27,6 @@ import TopBar from "../components/control-room/TopBar";
 import IncidentRail from "../components/control-room/IncidentRail";
 import AssetInspector from "../components/control-room/AssetInspector";
 import ReplayTimeline from "../components/control-room/ReplayTimeline";
-import NetworkContext from "../components/control-room/NetworkContext";
 
 const DigitalTwinScene = dynamic(
   () => import("../components/digital-twin/DigitalTwinScene"),
@@ -60,6 +59,7 @@ export default function ControlRoom() {
     [retry, setRetry] = useState(0);
   const [railOpen, setRailOpen] = useState(false),
     [helpOpen, setHelpOpen] = useState(false);
+  const [inspectorDetailId, setInspectorDetailId] = useState<string | null>(null);
   const initializedDataset = useRef("");
   // Playback issues one request per frame. Those are not user-visible loads, so
   // they must not strobe the spinner or disable the scene while it animates.
@@ -127,6 +127,7 @@ export default function ControlRoom() {
   }, [graph, dataset]);
   const changeDataset = useCallback((name: string) => {
     initializedDataset.current = "";
+    setInspectorDetailId(null);
     setData(null);
     setSelection(null);
     setNavigation({});
@@ -136,6 +137,7 @@ export default function ControlRoom() {
   const navigate = useCallback(
     (next: Navigation) => {
       if (!graph) return;
+      setInspectorDetailId(null);
       setNavigation(next);
       setSelection((previous) => {
         const a = previous && graph.assets[previous.assetId];
@@ -192,6 +194,7 @@ export default function ControlRoom() {
   );
   const focusIncident = useCallback(
     (incident: Incident) => {
+      setInspectorDetailId(null);
       const facility = data?.facilities.find(
         (f) => f.id === incident.facility_id,
       );
@@ -213,7 +216,7 @@ export default function ControlRoom() {
   }, [graph, navigation]);
   const replay = useCallback((time: number | null) => setAt(time), []);
   const interactions = useMemo(
-    () => ({ onSelect: select, onFocus: focus, onNavigate: navigate }),
+    () => ({ onSelect: select, onFocus: (asset: Asset) => { setInspectorDetailId(asset.id); focus(asset); }, onNavigate: navigate }),
     [select, focus, navigate],
   );
   const scopeFacilities =
@@ -229,6 +232,20 @@ export default function ControlRoom() {
             : true,
       )
     : [];
+  // Compact asset context keeps its system in view; full details use the original focus intent.
+  const compactContext = Boolean(selectedAsset && inspectorDetailId !== selectedAsset.id);
+  const presentationNavigation: Navigation = compactContext && selectedAsset ? { systemId: selectedAsset.systemId } : navigation;
+  const systemContextFrame = graph && presentationNavigation.systemId && !presentationNavigation.facilityId
+    ? navigationFrame(graph, presentationNavigation) : null;
+  const presentationIntent: CameraIntent = systemContextFrame
+    ? {
+        // Balance the perspective-heavy front corner within the open canvas.
+        target: [systemContextFrame.target[0] + systemContextFrame.radius * 0.26,
+          systemContextFrame.target[1], systemContextFrame.target[2] + systemContextFrame.radius * 0.21],
+        radius: systemContextFrame.radius * 1.15,
+        revision: intent.revision * 2,
+      }
+    : { ...intent, radius: !navigation.systemId ? intent.radius * 1.1 : intent.radius, revision: intent.revision * 2 + 1 };
   return (
     <main className={"control-room " + (selectedAsset ? "inspector-open" : "")}>
       <div className="scene-stage">
@@ -236,9 +253,9 @@ export default function ControlRoom() {
           <DigitalTwinScene
             graph={graph}
             data={data}
-            navigation={navigation}
+            navigation={presentationNavigation}
             selection={selection}
-            intent={intent}
+            intent={presentationIntent}
             interactions={interactions}
           />
         ) : (
@@ -299,26 +316,21 @@ export default function ControlRoom() {
       )}
       {data && (
         <>
-          {navigation.systemId && !selectedAsset && <NetworkContext key={navigation.systemId} data={data} navigation={navigation} onNavigate={navigate} onIncident={focusIncident}/>}
           <div className="scene-title">
             <span className="technical-label">
               <span className="status-dot cyan" />
               OILFIELD WATER OPERATIONS
             </span>
             <h2>
-              {navigation.facilityId
-                ? navigation.facilityId.replace(/^.*_FACILITY_/, "Facility ")
-                : navigation.systemId
-                  ? `System ${navigation.systemId}`
+              {presentationNavigation.facilityId
+                ? presentationNavigation.facilityId.replace(/^.*_FACILITY_/, "Facility ")
+                : presentationNavigation.systemId
+                  ? `System ${presentationNavigation.systemId}`
                   : "Network overview"}
             </h2>
-            <p>
-              {navigation.facilityId
-                ? "Wells → tank → pump → pipeline → disposal"
-                : `${navigation.systemId ? scopeFacilities.length : data.facilities.length} facilities · ${navigation.systemId ? "shared disposal destination" : `${data.systems.length} connected systems`}`}
-            </p>
+            <p>{presentationNavigation.facilityId ? "Wells → tank → pump → pipeline → disposal" : `${presentationNavigation.systemId ? scopeFacilities.length : data.facilities.length} facilities · ${presentationNavigation.systemId ? `${data.alerts.filter(a => a.system_id === presentationNavigation.systemId).length} active incidents · dedicated disposal site` : `${data.systems.length} connected systems`}`}</p>
           </div>
-          <div className="scene-navigator glass">
+          <details className="scene-navigator"><summary><Layers3 size={15}/>Explore equipment</summary><div className="scene-picker-content">
             <Layers3 size={14} />
             {navigation.systemId && (
               <select
@@ -359,8 +371,9 @@ export default function ControlRoom() {
                 ))}
               </select>
             </label>
-          </div>
+          </div></details>
           <IncidentRail
+            systemId={presentationNavigation.systemId}
             incidents={data.alerts}
             open={railOpen}
             onToggle={() => setRailOpen((v) => !v)}
@@ -376,7 +389,9 @@ export default function ControlRoom() {
               data={data}
               dataset={dataset}
               disabled={busy}
-              onClose={() => setSelection(null)}
+              expanded={inspectorDetailId === selectedAsset.id}
+              onExpandedChange={value => setInspectorDetailId(value ? selectedAsset.id : null)}
+              onClose={() => { setSelection(null); setInspectorDetailId(null); }}
               onFocus={() => focus(selectedAsset)}
               onSelect={select}
             />
@@ -407,7 +422,7 @@ export default function ControlRoom() {
             {selectedAsset && (
               <button
                 className="tool-button glass"
-                onClick={() => focus(selectedAsset)}
+                onClick={() => { setInspectorDetailId(selectedAsset.id); focus(selectedAsset); }}
                 title="Focus selected equipment"
               >
                 <Crosshair size={16} />

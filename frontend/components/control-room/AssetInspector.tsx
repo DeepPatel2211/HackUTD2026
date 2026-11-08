@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ChevronRight, Crosshair, Gauge, ShieldCheck, X } from "lucide-react";
+import { ChevronRight, Crosshair, Gauge, ShieldCheck, X, Activity, Clock3, ArrowRight, ArrowLeft } from "lucide-react";
 import type { Asset, Dashboard, Selection, TrendPoint } from "../../lib/types";
 import { api } from "../../lib/api";
 import {
@@ -22,6 +22,8 @@ export default function AssetInspector({
   onClose,
   onFocus,
   onSelect,
+  expanded,
+  onExpandedChange,
 }: {
   asset: Asset;
   selection: Selection;
@@ -31,6 +33,8 @@ export default function AssetInspector({
   onClose: () => void;
   onFocus: () => void;
   onSelect: (s: Selection) => void;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
 }) {
   const facility = data.facilities.find((f) => f.id === asset.facilityId);
   const incident = data.alerts.find((a) => a.facility_id === asset.facilityId);
@@ -79,11 +83,11 @@ export default function AssetInspector({
   )?.disposal_site;
   return (
     <aside
-      className="asset-inspector glass"
+      className={"asset-inspector " + (expanded ? "details-open" : "summary-only")}
       aria-label={`${asset.id} inspector`}
     >
       <div className="inspector-heading">
-        <span className="technical-label">ASSET INSPECTOR</span>
+        <button className="inspector-back" onClick={() => onExpandedChange(false)}><ArrowLeft size={15}/>Asset details</button>
         <button
           className="icon-button"
           onClick={onClose}
@@ -92,6 +96,19 @@ export default function AssetInspector({
           <X size={17} />
         </button>
       </div>
+      {!expanded && <div className="asset-summary">
+        <div className="summary-heading">
+          <Activity size={29} style={{ color: state.color }}/>
+          <div><h2>{friendlyName}</h2><p>{facility ? facility.id.replace(/^.*_FACILITY_/, 'Facility ') + ' · ' : ''}System {asset.systemId}</p></div>
+          <span className="state-pill" style={{ color: state.color, borderColor: state.color + '55' }}>{state.label}</span>
+          <button className="summary-close icon-button" onClick={onClose} aria-label="Close asset summary"><X size={15}/></button>
+        </div>
+        <dl className="summary-evidence">
+          <div><dt><Activity size={16}/>Evidence</dt><dd>{asset.kind === 'pump' && facility ? `${state.label} · Output ${formatValue(facility.flow_bpd)} bbl/day` : incident?.evidence[0] || state.label}</dd></div>
+          <div><dt><Clock3 size={16}/>{incident?.category === 'pump_failure' ? 'Shutdown risk' : 'Assessment'}</dt><dd className={incident ? 'exception-value' : ''} style={incident?.category === 'pump_degradation' ? { color: state.color } : undefined}>{incident?.category === 'pump_failure' && incident.hours_to_limit != null ? `${incident.hours_to_limit.toFixed(1)}h to shutdown` : incident ? 'Inspection required' : 'No active incident'}</dd></div>
+        </dl>
+        <button className="inspect-response" onClick={() => onExpandedChange(true)}>Inspect response<ArrowRight size={19}/></button>
+      </div>}
       <div className="inspector-scroll">
         <div className="asset-title">
           <span className="asset-type">

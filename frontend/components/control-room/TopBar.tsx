@@ -3,6 +3,8 @@ import {
   Download,
   RotateCcw,
   Waves,
+  Layers3,
+  Database,
 } from "lucide-react";
 import type { Dashboard, Navigation } from "../../lib/types";
 import { useState } from "react";
@@ -43,19 +45,23 @@ export default function TopBar({
     window.setTimeout(() => setNotice(""), 4000);
   }
   return (
-    <header className="topbar glass" data-view={navigation.facilityId ? 'facility' : navigation.systemId ? 'system' : 'network'}>
+    <header className="topbar" data-view={navigation.facilityId ? 'facility' : navigation.systemId ? 'system' : 'network'}>
       <button type="button" onClick={() => onNavigate({})} className="brand" title="Return to all systems" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }}>
         <span className="brand-symbol">
           <Waves size={22} />
         </span>
         <span>
-          NIGHTSHIFT <em>AI</em>
-          <small>OILFIELD DIGITAL TWIN</small>
+          NightShift <em>AI</em>
         </span>
       </button>
-      <span className="toolbar-divider" />
+      <span className="brand-description">Oilfield Operations Digital Twin</span>
+      <label className="system-control"><Layers3 size={18}/>
+        <select aria-label="Navigate to system" value={navigation.systemId || ''} disabled={!data} onChange={e => onNavigate(e.target.value ? { systemId: e.target.value } : {})}>
+          <option value="">All systems</option>{data?.systems.map(system => <option key={system.id} value={system.id}>System {system.id}</option>)}
+        </select>
+      </label>
       <label className="dataset-control">
-        <span className="technical-label">DATASET</span>
+        <span className="dataset-caption"><Database size={17}/>Dataset</span>
         <select
           value={dataset}
           aria-label="Select telemetry dataset"
@@ -71,17 +77,12 @@ export default function TopBar({
           ))}
         </select>
       </label>
-      <label className="system-control"><span className="technical-label">VIEW</span>
-        <select aria-label="Navigate to system" value={navigation.systemId || ''} disabled={!data} onChange={e => onNavigate(e.target.value ? { systemId: e.target.value } : {})}>
-          <option value="">All systems</option>{data?.systems.map(system => <option key={system.id} value={system.id}>System {system.id}</option>)}
-        </select>
-      </label>
       <div className="replay-status">
         <span>
           <i />
-          {busy ? "LOADING RECORDING" : "RECORDED TELEMETRY"}
+          {busy ? "Loading recording" : "Recorded telemetry"}
         </span>
-        <time>{data ? timestamp(data.now) : "Awaiting dataset"}</time>
+        <time>{data ? timestamp(data.now).replace(",", ` ${new Date(data.now * 1000).getUTCFullYear()} \u00b7`) : "Awaiting dataset"}</time>
       </div>
       <div className="toolbar-actions">
         <button className="icon-button" onClick={onBack} disabled={!navigation.systemId} title="Back one navigation level" aria-label="Back one navigation level"><ArrowLeft size={17}/></button>

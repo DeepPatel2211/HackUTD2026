@@ -154,8 +154,8 @@ export default function SystemScene({
         selected={selection?.assetId === `${layout.system.id}:truck-yard`}
         onSelect={interactions.onSelect}
         onFocus={interactions.onFocus}
-        label="FLEET AREA · SYMBOLIC"
-        showLabel={navigation.systemId === layout.system.id}
+        label="Truck yard (symbolic)"
+        showLabel={false}
         ringRadius={4}
       >
         <Box position={[0, 0.04, 0]} size={[8, 0.08, 5]} />

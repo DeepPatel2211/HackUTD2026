@@ -88,13 +88,13 @@ export default function ReplayTimeline({
   const pct = ((draft - data.start) / Math.max(1, data.end - data.start)) * 100;
   return (
     <section
-      className="replay-timeline glass"
+      className="replay-timeline"
       aria-label="Historical telemetry replay"
     >
       <div className="timeline-title">
         <Clock3 size={17} />
         <span>
-          <b>SHIFT REPLAY</b>
+          <b>Recorded replay</b>
           <time>{timestamp(draft)}</time>
         </span>
       </div>
