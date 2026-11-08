@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ChevronRight, Crosshair, Gauge, ShieldCheck, X, Activity, Clock3, ArrowRight, ArrowLeft } from "lucide-react";
+import { ChevronRight, Crosshair, Gauge, ShieldCheck, X, Activity, Clock3, ArrowRight, ArrowLeft, BellRing, Check } from "lucide-react";
 import type { Asset, Dashboard, Selection, TrendPoint } from "../../lib/types";
 import { api } from "../../lib/api";
 import {
@@ -11,7 +11,8 @@ import {
   money,
 } from "../../lib/operational-status";
 import SensorTrend from "../charts/SensorTrend";
-import NemotronInvestigation from "./NemotronInvestigation";
+import AgentAnalysis from "./AgentAnalysis";
+import type { Operator } from "../../lib/operators";
 
 export default function AssetInspector({
   asset,
@@ -24,6 +25,7 @@ export default function AssetInspector({
   onSelect,
   expanded,
   onExpandedChange,
+  operator,
 }: {
   asset: Asset;
   selection: Selection;
@@ -35,6 +37,7 @@ export default function AssetInspector({
   onSelect: (s: Selection) => void;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+  operator?: Operator;
 }) {
   const facility = data.facilities.find((f) => f.id === asset.facilityId);
   const incident = data.alerts.find((a) => a.facility_id === asset.facilityId);
@@ -42,6 +45,8 @@ export default function AssetInspector({
   const [readings, setReadings] = useState<Record<string, TrendPoint[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  // Pages are marked in this session only; nothing is transmitted.
+  const [paged, setPaged] = useState("");
   const metric =
     selection.metric && asset.metrics.includes(selection.metric)
       ? selection.metric
@@ -130,121 +135,6 @@ export default function AssetInspector({
           Focus equipment
           <ChevronRight size={13} />
         </button>
-        {asset.metrics.length > 0 && (
-          <section className="inspector-section">
-            <div className="section-heading">
-              <Gauge size={14} />
-              <h2>Recorded measurements</h2>
-            </div>
-            <div className="measurement-list">
-              {asset.metrics.map((name) => {
-                const points = readings[name];
-                const value = points?.[points.length - 1]?.value;
-                const status =
-                  name === "status" && value != null
-                    ? asset.kind === "pump"
-                      ? (
-                          { 0: "Stopped", 1: "Running", 2: "Fault" } as Record<
-                            number,
-                            string
-                          >
-                        )[value]
-                      : (
-                          { 0: "Shut in", 1: "Producing" } as Record<
-                            number,
-                            string
-                          >
-                        )[value]
-                    : null;
-                return (
-                  <button
-                    key={name}
-                    disabled={disabled}
-                    className={metric === name ? "selected" : ""}
-                    onClick={() =>
-                      onSelect({ assetId: asset.id, metric: name })
-                    }
-                  >
-                    <span>{metricInfo[name]?.label || name}</span>
-                    <b>
-                      {value == null
-                        ? loading
-                          ? "Loading…"
-                          : "Unavailable"
-                        : status || formatValue(value)}
-                      <small>
-                        {value != null && !status ? metricInfo[name]?.unit : ""}
-                      </small>
-                    </b>
-                  </button>
-                );
-              })}
-            </div>
-
-          </section>
-        )}
-        {asset.kind === "tank" && facility && (
-          <div className="spec-list">
-            <span>
-              Configured capacity{" "}
-              <b>{formatValue(facility.tank.capacity_bbl, 0)} bbl</b>
-            </span>
-            <span>
-              Warning / shutdown{" "}
-              <b>
-                {data.limits.warning}% / {data.limits.shutdown}%
-              </b>
-            </span>
-          </div>
-        )}
-        {well && (
-          <div className="spec-list">
-            <span>
-              Catalog oil production{" "}
-              <b>{formatValue(well.oil_bpd, 0)} bbl/day</b>
-            </span>
-            <span>
-              Catalog gas production{" "}
-              <b>{formatValue(well.gas_mcfd, 0)} mcf/day</b>
-            </span>
-            <p className="fine-print">
-              Configured production rates; these are not live oil/gas sensors.
-            </p>
-          </div>
-        )}
-        {disposal && (
-          <section className="inspector-section">
-            <h2>Shared disposal destination</h2>
-            <p>
-              Facility pipelines in system {asset.systemId} connect to this
-              installation.
-            </p>
-            <div className="spec-list">
-              <span>
-                Configured pressure{" "}
-                <b>{formatValue(disposal.pressure_psi, 0)} psi</b>
-              </span>
-            </div>
-            <p className="fine-print">
-              The dataset provides no disposal-site sensors. This is a network
-              configuration value.
-            </p>
-          </section>
-        )}
-        {asset.kind === "yard" && (
-          <section className="inspector-section">
-            <h2>Fleet resource area</h2>
-            <p>
-              The tanker is a symbolic representation, not a truck count or
-              dispatch. The current API does not expose fleet size, live
-              availability, truck identities or movement.
-            </p>
-            <p className="fine-print">
-              Truck recommendations are visible in the affected facility’s
-              response panel. No trucks have been dispatched by this interface.
-            </p>
-          </section>
-        )}
         {incident && (
           <section className="inspector-section incident-evidence">
             <div className="section-heading">
@@ -368,18 +258,161 @@ export default function AssetInspector({
               <summary>Verification & planning limits</summary>
               <p>{data.planning_scope}</p>
             </details>
+            {operator && (
+              <div className="assign-row">
+                <div className="assign-who">
+                  <span className="technical-label">On call · System {asset.systemId}</span>
+                  <b>#{operator.id} · {operator.name}</b>
+                  <code>{operator.pager}</code>
+                </div>
+                <button
+                  className={"pager-button " + (paged ? "sent" : "")}
+                  onClick={() =>
+                    setPaged(
+                      new Date().toLocaleTimeString("en-GB", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: "UTC",
+                        hour12: false,
+                      }),
+                    )
+                  }
+                >
+                  {paged ? <Check size={13} /> : <BellRing size={13} />}
+                  {paged ? `Paged ${paged} UTC` : "Ping pager to assign"}
+                </button>
+              </div>
+            )}
             <p className="simulation-note">
-              Recommendation only. No equipment commands or dispatches are sent.
+              Recommendation only. No equipment commands or dispatches are sent,
+              and paging is simulated in this browser.
             </p>
           </section>
         )}
         {facility && (
-          <NemotronInvestigation
+          <AgentAnalysis
             dataset={dataset}
             facilityId={facility.id}
             at={data.now}
-            disabled={disabled}
+            active={!disabled}
           />
+        )}
+        {asset.kind === "tank" && facility && (
+          <div className="spec-list">
+            <span>
+              Configured capacity{" "}
+              <b>{formatValue(facility.tank.capacity_bbl, 0)} bbl</b>
+            </span>
+            <span>
+              Warning / shutdown{" "}
+              <b>
+                {data.limits.warning}% / {data.limits.shutdown}%
+              </b>
+            </span>
+          </div>
+        )}
+        {well && (
+          <div className="spec-list">
+            <span>
+              Catalog oil production{" "}
+              <b>{formatValue(well.oil_bpd, 0)} bbl/day</b>
+            </span>
+            <span>
+              Catalog gas production{" "}
+              <b>{formatValue(well.gas_mcfd, 0)} mcf/day</b>
+            </span>
+            <p className="fine-print">
+              Configured production rates; these are not live oil/gas sensors.
+            </p>
+          </div>
+        )}
+        {disposal && (
+          <section className="inspector-section">
+            <h2>Shared disposal destination</h2>
+            <p>
+              Facility pipelines in system {asset.systemId} connect to this
+              installation.
+            </p>
+            <div className="spec-list">
+              <span>
+                Configured pressure{" "}
+                <b>{formatValue(disposal.pressure_psi, 0)} psi</b>
+              </span>
+            </div>
+            <p className="fine-print">
+              The dataset provides no disposal-site sensors. This is a network
+              configuration value.
+            </p>
+          </section>
+        )}
+        {asset.kind === "yard" && (
+          <section className="inspector-section">
+            <h2>Fleet resource area</h2>
+            <p>
+              The tanker is a symbolic representation, not a truck count or
+              dispatch. The current API does not expose fleet size, live
+              availability, truck identities or movement.
+            </p>
+            <p className="fine-print">
+              Truck recommendations are visible in the affected facility’s
+              response panel. No trucks have been dispatched by this interface.
+            </p>
+          </section>
+        )}
+        <details className="evidence-numbers inspector-section">
+          <summary>Evidence &amp; numbers</summary>
+        {asset.metrics.length > 0 && (
+          <section className="inspector-section">
+            <div className="section-heading">
+              <Gauge size={14} />
+              <h2>Recorded measurements</h2>
+            </div>
+            <div className="measurement-list">
+              {asset.metrics.map((name) => {
+                const points = readings[name];
+                const value = points?.[points.length - 1]?.value;
+                const status =
+                  name === "status" && value != null
+                    ? asset.kind === "pump"
+                      ? (
+                          { 0: "Stopped", 1: "Running", 2: "Fault" } as Record<
+                            number,
+                            string
+                          >
+                        )[value]
+                      : (
+                          { 0: "Shut in", 1: "Producing" } as Record<
+                            number,
+                            string
+                          >
+                        )[value]
+                    : null;
+                return (
+                  <button
+                    key={name}
+                    disabled={disabled}
+                    className={metric === name ? "selected" : ""}
+                    onClick={() =>
+                      onSelect({ assetId: asset.id, metric: name })
+                    }
+                  >
+                    <span>{metricInfo[name]?.label || name}</span>
+                    <b>
+                      {value == null
+                        ? loading
+                          ? "Loading…"
+                          : "Unavailable"
+                        : status || formatValue(value)}
+                      <small>
+                        {value != null && !status ? metricInfo[name]?.unit : ""}
+                      </small>
+                    </b>
+                  </button>
+                );
+              })}
+            </div>
+
+          </section>
         )}
         {asset.metrics.length > 0 && <details className="supporting-trend inspector-section"><summary>Sensor trend & technical details</summary>
             {metric && (
@@ -410,6 +443,7 @@ export default function AssetInspector({
               Sensor markers identify measured assets and metrics. Mounting
               positions are schematic.
             </p>        </details>}
+        </details>
       </div>
     </aside>
   );

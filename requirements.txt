@@ -1,4 +1,7 @@
 fastapi==0.162.2
 uvicorn==0.54.0
 httpx==0.28.1
-scipy==1.15.3
+# scipy drives the MILP planner and pulls numpy. Left unpinned to a major range
+# because the previous scipy==1.15.3 pin has no wheel for Python 3.14.
+numpy>=2.0,<3
+scipy>=1.15,<2

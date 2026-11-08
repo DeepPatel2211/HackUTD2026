@@ -13,9 +13,11 @@ import os
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from . import agents, config
 from .engine import ROOT, analyze, load
 from .planner import FacilityProblem, allocate, candidates
 
@@ -25,8 +27,6 @@ app.add_middleware(
     allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'],
     allow_methods=['GET', 'POST'], allow_headers=['Content-Type'],
 )
-
-DEFAULT_MODEL = 'nvidia/llama-3.3-nemotron-super-49b-v1.5'
 
 
 def _analysis(dataset: str):
@@ -50,7 +50,9 @@ def _view(dataset: str, at: int | None):
 
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', 'nemotron_configured': bool(os.getenv('NVIDIA_API_KEY'))}
+    return {'status': 'ok', 'nemotron_configured': bool(config.api_key()),
+            'models': {'component': config.component_model(),
+                       'reasoning': config.reasoning_model()}}
 
 
 @app.get('/api/datasets')
@@ -237,11 +239,11 @@ async def investigate(request: Investigation):
     already derived and verified. That keeps the recommendation deterministic and
     reproducible while letting the explanation be conversational.
     """
-    key = os.getenv('NVIDIA_API_KEY')
+    key = config.api_key()
     if not key:
         raise HTTPException(503, 'Set NVIDIA_API_KEY on the backend to enable live '
                                  'Nemotron tool execution.')
-    model = os.getenv('NVIDIA_MODEL', DEFAULT_MODEL)
+    model = config.reasoning_model()
     view = _view(request.dataset, request.at)
     facility = next((f for f in view['facilities'] if f['id'] == request.facility_id), None)
     if facility is None:
@@ -273,7 +275,7 @@ async def investigate(request: Investigation):
         async with httpx.AsyncClient(timeout=90) as client:
             for _ in range(6):
                 response = await client.post(
-                    'https://integrate.api.nvidia.com/v1/chat/completions',
+                    config.NVIDIA_URL,
                     headers={'Authorization': f'Bearer {key}'},
                     json={'model': model, 'messages': messages, 'tools': tools,
                           'temperature': .1, 'max_tokens': 1600})
@@ -313,3 +315,83 @@ async def investigate(request: Investigation):
     except httpx.HTTPError as exc:
         raise HTTPException(502, 'NVIDIA request failed. Check server credentials, model '
                                  'availability, and connectivity.') from exc
+
+
+# --------------------------------------------------------------------------
+# Agent hierarchy
+# --------------------------------------------------------------------------
+
+@app.get('/api/agents')
+async def agent_stream(dataset: str, facility_id: str, at: int | None = None):
+    """Stream the agent tree for one incident as server-sent events.
+
+    Components answer first and in parallel, then the facility agents that read
+    them, then the system agent that allocates the shared fleet. Streaming
+    matters because the panel can show the first component in under a second
+    instead of waiting several seconds for the whole tree.
+
+    Every event carries the deterministic payload the agent was given, so the
+    UI can render the hard numbers even when an agent's prose is unavailable.
+    """
+    if not config.api_key():
+        raise HTTPException(503, 'Set NVIDIA_API_KEY on the backend to enable agents.')
+    analysis = _analysis(dataset)
+    view = _view(dataset, at)
+    if facility_id not in analysis.data.facilities:
+        raise HTTPException(404, 'Unknown facility')
+
+    async def events():
+        try:
+            async for message in agents.analyse(analysis, view, facility_id):
+                yield f'data: {json.dumps(message, default=str)}\n\n'
+        except Exception as exc:                      # noqa: BLE001 - must reach the client
+            yield f'data: {json.dumps({"tier": "error", "error": str(exc)[:300]})}\n\n'
+        yield f'data: {json.dumps({"tier": "done"})}\n\n'
+
+    return StreamingResponse(events(), media_type='text/event-stream',
+                             headers={'Cache-Control': 'no-cache',
+                                      'X-Accel-Buffering': 'no'})
+
+
+@app.get('/api/disposal-outage')
+def disposal_outage(dataset: str, system_id: str, hours: float = Query(12, gt=0, le=72),
+                    at: int | None = None):
+    """What a disposal-site outage would cost, and whether the fleet can absorb it.
+
+    If the disposal site stops accepting water, every pipeline in the system is
+    dead at once, so every tank fills on well inflow alone -- not just the ones
+    with a failed pump. Trucks still work, because they haul to somewhere other
+    than the dead site, so this is the same optimisation problem at full system
+    scale, solved with the same MILP.
+    """
+    analysis = _analysis(dataset)
+    view = _view(dataset, at)
+    data = analysis.data
+    system = next((s for s in data.network['systems'] if s['id'] == system_id), None)
+    if system is None:
+        raise HTTPException(404, 'Unknown system')
+
+    problems = []
+    for facility in system['facilities']:
+        level = data.value(facility['tank']['id'], 'level_pct', view['now'])
+        water, revenue = analysis.well_rates(facility, view['now'])
+        problems.append(FacilityProblem(data, facility, level, hours, water, revenue))
+    options = {p.facility_id: candidates(p) for p in problems}
+    fleet = data.ops['systems'][system_id]['emergency_fleet_size']
+    chosen = allocate(problems, options, fleet)
+
+    planned = sum(plan['cost'] for plan in chosen)
+    nothing = sum(options[p.facility_id][0]['baseline_cost'] for p in problems)
+    return {
+        'now': view['now'], 'system_id': system_id, 'outage_hours': hours,
+        'fleet_size': fleet,
+        'planned_cost': round(planned, 2),
+        'do_nothing_cost': round(nothing, 2),
+        'avoided_cost': round(nothing - planned, 2),
+        'tanks_total': len(problems),
+        'tanks_still_tripping': sum(1 for plan in chosen if plan['tripped']),
+        'facilities': [
+            {'facility_id': problem.facility_id, 'label': plan['label'],
+             'cost': plan['cost'], 'trucks': plan['trucks'], 'tripped': plan['tripped']}
+            for problem, plan in zip(problems, chosen)],
+    }

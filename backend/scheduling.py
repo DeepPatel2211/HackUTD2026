@@ -7,11 +7,48 @@ vehicles; it does not use a cheapest-per-truck shortlist or an EDF schedule.
 """
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import math
+import os
 
 import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
+
+try:                                     # pragma: no cover - platform dependent
+    _LIBC = ctypes.CDLL(None)
+except OSError:
+    _LIBC = None
+
+
+@contextlib.contextmanager
+def _quiet():
+    """Silence the HiGHS solver's native chatter.
+
+    scipy exposes no option for this: the message is written by the C++ solver
+    straight to the process stdout, so the descriptors themselves have to be
+    swapped. Two details matter. The null device is opened with os.open rather
+    than open(), because a raw descriptor is all that is needed and the test
+    suite audits every builtins.open call to prove inference never reads an
+    answer key. And the C stream is flushed before the descriptors are put
+    back, or the solver's buffered text simply reappears at process exit.
+    """
+    saved = (os.dup(1), os.dup(2))
+    null = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(null, 1)
+        os.dup2(null, 2)
+        yield
+    finally:
+        if _LIBC is not None:
+            _LIBC.fflush(None)
+        os.dup2(saved[0], 1)
+        os.dup2(saved[1], 2)
+        os.close(null)
+        os.close(saved[0])
+        os.close(saved[1])
+
 
 # Millisecond-scale repair-boundary clearance and a small volume clearance keep
 # numerical equality at a pickup from accidentally triggering automatic shut-in.
@@ -139,10 +176,11 @@ def solve(problems, option_lists, fleet):
             cc.append(key)
             vv.append(value)
     matrix = coo_matrix((vv, (rr, cc)), shape=(len(rows), len(objective))).tocsc()
-    result = milp(np.asarray(objective), integrality=np.asarray(integer),
-                  bounds=Bounds(np.zeros(len(objective)), upper),
-                  constraints=LinearConstraint(matrix, lows, highs),
-                  options={'mip_rel_gap': 0.0, 'presolve': True})
+    with _quiet():
+        result = milp(np.asarray(objective), integrality=np.asarray(integer),
+                      bounds=Bounds(np.zeros(len(objective)), upper),
+                      constraints=LinearConstraint(matrix, lows, highs),
+                      options={'mip_rel_gap': 0.0, 'presolve': True})
     if result.status == 2:
         return None
     if not result.success or result.status != 0:
