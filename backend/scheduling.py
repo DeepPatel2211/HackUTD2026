@@ -18,7 +18,7 @@ from scipy.sparse import coo_matrix
 
 try:                                     # pragma: no cover - platform dependent
     _LIBC = ctypes.CDLL(None)
-except OSError:
+except (OSError, TypeError):  # CDLL(None) is unsupported on Windows Python 3.10.
     _LIBC = None
 
 

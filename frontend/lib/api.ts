@@ -28,7 +28,8 @@ function query(dataset: string, at?: number | null) {
  * the backend keeps the stream live. The proxy path is kept as a fallback so a
  * backend on another host still works, just buffered.
  */
-const AGENT_ORIGIN = process.env.NEXT_PUBLIC_AGENT_ORIGIN ?? "http://127.0.0.1:8000";
+const AGENT_ORIGIN = process.env.NEXT_PUBLIC_AGENT_ORIGIN ??
+  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : "");
 
 export function agentStreamUrls(
   dataset: string,
