@@ -1,13 +1,13 @@
 import type { Asset, Dashboard, Facility, Incident } from "./types";
 
 export const colors = {
-  healthy: "#67bc9c",
+  healthy: "#75bba1",
   idle: "#7b8f9f",
-  warning: "#e7b568",
-  fault: "#f16c68",
-  selected: "#7edfe9",
-  steel: "#637888",
-  darkSteel: "#273e4d",
+  warning: "#e0a65e",
+  fault: "#ed7770",
+  selected: "#85d7df",
+  steel: "#9a9f9e",
+  darkSteel: "#465259",
 };
 export const metricInfo: Record<string, { label: string; unit: string }> = {
   level_pct: { label: "Tank level", unit: "%" },

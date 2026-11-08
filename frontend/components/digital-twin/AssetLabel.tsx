@@ -13,5 +13,5 @@ export const LabelPortal = createContext<RefObject<HTMLElement> | undefined>(
 );
 export function AssetLabel(props: ComponentProps<typeof Html>) {
   const portal = useContext(LabelPortal);
-  return <Html {...props} portal={portal} />;
+  return <Html eps={1} {...props} portal={portal} />;
 }

@@ -58,8 +58,8 @@ export default function SensorTrend({
       >
         <defs>
           <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
-            <stop stopColor="#7edfe9" stopOpacity=".16" />
-            <stop offset="1" stopColor="#7edfe9" stopOpacity="0" />
+            <stop stopColor="#85d7df" stopOpacity=".16" />
+            <stop offset="1" stopColor="#85d7df" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0, 0.5, 1].map((t) => (
@@ -71,7 +71,7 @@ export default function SensorTrend({
               y2={20 + t * 100}
               stroke="#24323f"
             />
-            <text x="0" y={23 + t * 100} fill="#8194a5" fontSize="8">
+            <text x="0" y={23 + t * 100} fill="#a0b4c0" fontSize="10">
               {formatValue(max - t * (max - min), 0)}
             </text>
           </g>
@@ -84,7 +84,7 @@ export default function SensorTrend({
                 x2="310"
                 y1={y(v)}
                 y2={y(v)}
-                stroke={i ? "#f16c68" : "#e7b568"}
+                stroke={i ? "#ed7770" : "#e0a65e"}
                 strokeDasharray="3 4"
                 opacity=".65"
               />
@@ -92,8 +92,8 @@ export default function SensorTrend({
                 x="307"
                 y={y(v) - 3}
                 textAnchor="end"
-                fontSize="7"
-                fill={i ? "#f16c68" : "#e7b568"}
+                fontSize="9"
+                fill={i ? "#ed7770" : "#e0a65e"}
               >
                 {v}% {i ? "STOP" : "WARN"}
               </text>
@@ -103,7 +103,7 @@ export default function SensorTrend({
         <polyline
           points={path}
           fill="none"
-          stroke="#7edfe9"
+          stroke="#85d7df"
           strokeWidth="1.6"
           strokeLinejoin="round"
         />
