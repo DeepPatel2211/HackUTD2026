@@ -240,22 +240,25 @@ class Analysis:
         return record
 
     def _scope(self) -> str:
-        """An honest statement of what the optimiser did and did not search."""
-        reuse = ('A truck could in principle finish one job and reach a second tank '
-                 'inside a repair window on this network, so dispatches are scheduled '
-                 'on a shared truck timeline.'
-                 if self.truck_reuse_possible else
-                 'On this network no truck can finish one job and reach a second tank '
-                 'before the repair ends, so each dispatch holds its trucks for the '
-                 'whole response.')
-        return ('Joint optimization considers every feasible truck-count/trip-count option, '
-                'dispatch ordering, shared vehicle availability, and independent well shut-in '
-                'times. Final actions are re-simulated after scheduling. Each facility uses '
-                'one simultaneous truck group with equal trips per truck. Measured well '
-                'inflows are held constant and repair duration is fixed by ops.json. '
-                'This is optimal only within that explicit model and numerical tolerances, '
-                'not an unrestricted claim of global field optimality. ' + reuse)
+        """What the planner checked, in words a night-shift operator can use.
 
+        This is shown on screen, so it is written for the person deciding
+        whether to trust the number, not for whoever wrote the optimiser. The
+        honest caveat still has to survive: the plan is the cheapest option
+        under stated assumptions, not a guarantee about the real world.
+        """
+        reuse = ('A truck can finish one job and still reach another tank before '
+                 'the repair ends, so trucks are scheduled on a shared timeline.'
+                 if self.truck_reuse_possible else
+                 'No truck can finish one job and reach another tank before the '
+                 'repair ends, so a dispatched truck stays with that tank.')
+        return ('Every combination of trucks, trips and well shut-ins was replayed '
+                'against the tank, and the cheapest one that never hits the shutdown '
+                'limit was chosen. Tanks in the same system are solved together, '
+                'because they share the same trucks. ' + reuse +
+                ' The costing assumes wells keep producing at their current rate and '
+                'the repair takes as long as ops.json says. If either changes, re-check '
+                'the plan.')
 
 
 def _alert_order(alert: dict) -> tuple:

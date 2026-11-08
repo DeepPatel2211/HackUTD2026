@@ -169,9 +169,8 @@ export default function AgentAnalysis({
       )}
 
       <p className="fine-print">
-        Agents explain figures the planner already computed and verified. They
-        do not calculate, and any number they state that is not in their data is
-        rejected before it reaches this panel.
+        Every figure above comes from the verified plan, not from the agents.
+        Anything an agent states that its data does not support is rejected.
       </p>
     </section>
   );

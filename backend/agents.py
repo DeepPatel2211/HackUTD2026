@@ -97,11 +97,85 @@ def unsupported_numbers(text: str, payload: dict) -> list[float]:
 
 
 # --------------------------------------------------------------------------
+# House style, applied after the fact
+# --------------------------------------------------------------------------
+
+_SPELLED_MONEY = re.compile(r'(?<![\w$])\$?([\d,]+(?:\.\d+)?)\s*(?:dollars|dollar|USD|usd)\b')
+_BARE_THOUSANDS = re.compile(r'\$(\d{4,})')
+_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
+_DIGITS = re.compile(r'\d+(?:\.\d+)?')
+
+# The small model used for component agents reproduces payload field names
+# verbatim however the prompt is worded, so they are translated here instead.
+_FIELD_WORDS = [
+    ('receive_flow_bpd', 'arriving flow'), ('baseline_water_bpd', 'usual water rate'),
+    ('discharge_psi', 'discharge pressure'), ('pressure_psi', 'pressure'),
+    ('water_bpd', 'barrels of water a day'), ('inflow_bpd', 'inflow'),
+    ('flow_bpd', 'flow'), ('oil_bpd', 'barrels of oil a day'),
+    ('gas_mcfd', 'mcf of gas a day'), ('level_pct', 'level'),
+    ('status_code', 'status'), ('disposal_psi', 'disposal pressure'),
+    ('water bpd', 'barrels of water a day'), ('oil bpd', 'barrels of oil a day'),
+    ('flow bpd', 'flow'), ('discharge psi', 'discharge pressure'),
+    ('disposal psi', 'disposal pressure'), ('pressure psi', 'pressure'),
+    ('level pct', 'level'), ('inflow bpd', 'inflow'),
+]
+
+
+def _commas(number: str) -> str:
+    cleaned = number.replace(',', '')
+    try:
+        return f'{int(round(float(cleaned))):,}'
+    except ValueError:
+        return number
+
+
+def _tidy(text: str) -> str:
+    """Put an agent's answer into the panel's house style.
+
+    Small models will not hold a formatting rule consistently across a whole
+    tree of calls -- the same model writes "$1,296" in one answer and "905
+    dollars" in the next. Formatting is deterministic work, so it is done here
+    rather than asked for repeatedly in the prompt. This never changes a value,
+    only how it reads.
+    """
+    text = _SPELLED_MONEY.sub(lambda m: '$' + _commas(m.group(1)), text)
+    text = _BARE_THOUSANDS.sub(lambda m: '$' + _commas(m.group(1)), text)
+    for field, words in _FIELD_WORDS:
+        text = re.sub(re.escape(field), words, text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*\n\s*', ' ', text)
+    text = re.sub(r'[ \t]{2,}', ' ', text).strip()
+
+    # A model padding to a sentence quota repeats itself. Two tests catch it:
+    # near-identical wording, and a sentence whose figures were all stated
+    # already, which is the usual shape of an echo ("78% full" twice).
+    kept, phrases, numbers = [], set(), set()
+    for sentence in _SENTENCE_SPLIT.split(text):
+        fingerprint = re.sub(r'[^a-z0-9]', '', sentence.lower())
+        if not fingerprint:
+            continue
+        if any(fingerprint in other or other in fingerprint for other in phrases):
+            continue
+        found = set(_DIGITS.findall(sentence))
+        if kept and found and found <= numbers:
+            continue
+        phrases.add(fingerprint)
+        numbers |= found
+        kept.append(sentence.strip())
+    return ' '.join(kept)
+
+
+# --------------------------------------------------------------------------
 # Deterministic payloads -- the only facts an agent ever sees
 # --------------------------------------------------------------------------
 
 def _round(value, digits=2):
     return None if value is None else round(float(value), digits)
+
+
+def _dollars(value):
+    """Whole dollars. Operators do not act on cents, and a model handed 3858.62
+    will faithfully reproduce "$3858.62" no matter how the prompt is worded."""
+    return None if value is None else int(round(float(value)))
 
 
 # Sensor readings carry noise, so a reading near its expected value is healthy.
@@ -125,11 +199,13 @@ def well_payload(data, facility: dict, well: dict, now: int) -> dict:
     water = data.value(well['id'], 'water_bpd', now)
     drift, abnormal = _off_by(water, well['baseline_water_bpd'])
     if status != 1:
-        assessment = 'Shut in. Producing no water, oil or gas, so earning nothing.'
+        assessment = 'Shut in, so producing no water, oil or gas and earning nothing.'
     elif abnormal:
-        assessment = f'Producing, but water rate is {drift:+.1f}% off its baseline.'
+        assessment = (f'Producing {_round(water)} barrels of water a day, which is '
+                      f'{drift:+.1f}% off its usual {well["baseline_water_bpd"]}.')
     else:
-        assessment = 'Producing normally, water rate within noise of its baseline.'
+        assessment = (f'Producing normally at {_round(water)} barrels of water a day, '
+                      f'in line with its usual {well["baseline_water_bpd"]}.')
     return {
         'asset_id': well['id'], 'kind': 'well',
         'producing': bool(status == 1),
@@ -139,7 +215,7 @@ def well_payload(data, facility: dict, well: dict, now: int) -> dict:
         'off_baseline_pct': drift,
         'oil_bpd': well['oil_bpd'],
         'gas_mcfd': well['gas_mcfd'],
-        'revenue_per_hour_usd': _round(data.well_revenue_per_hour(well)),
+        'revenue_per_hour_usd': _dollars(data.well_revenue_per_hour(well)),
         'assessment': assessment,
     }
 
@@ -274,13 +350,13 @@ def facility_payload(view: dict, facility_id: str, components: list[dict]) -> di
         }
         payload['verified_plan'] = {
             'label': plan['label'],
-            'cost_usd': plan['cost'],
-            'do_nothing_cost_usd': plan['baseline_cost'],
-            'saving_usd': _round(plan['baseline_cost'] - plan['cost']),
+            'cost_usd': _dollars(plan['cost']),
+            'do_nothing_cost_usd': _dollars(plan['baseline_cost']),
+            'saving_usd': _dollars(plan['baseline_cost'] - plan['cost']),
             'trucks': plan.get('trucks', 0),
             'trips_per_truck': plan.get('trips_per_truck', 0),
             'rejected_alternatives': [
-                {'label': alt['label'], 'cost_usd': alt['cost']}
+                {'label': alt['label'], 'cost_usd': _dollars(alt['cost'])}
                 for alt in plan.get('alternatives', [])[:4]],
         }
     return payload
@@ -295,7 +371,7 @@ def system_payload(view: dict, data, system_id: str, facilities: list[dict]) -> 
         'system_id': system_id,
         'fleet_size': ops['systems'][system_id]['emergency_fleet_size'],
         'truck_capacity_bbl': ops['emergency_trucking']['truck_capacity_bbl'],
-        'cost_per_trip_usd': ops['emergency_trucking']['cost_per_trip'],
+        'cost_per_trip_usd': _dollars(ops['emergency_trucking']['cost_per_trip']),
         'repair_hours': ops['expected_repair_hours']['pump_failure'],
         'disposal_site_id': next(s['disposal_site']['id'] for s in data.network['systems']
                                  if s['id'] == system_id),
@@ -304,11 +380,11 @@ def system_payload(view: dict, data, system_id: str, facilities: list[dict]) -> 
             {'facility_id': a['facility_id'],
              'hours_to_limit': a.get('hours_to_limit'),
              'plan': a['recommendation']['label'],
-             'cost_usd': a['recommendation']['cost'],
+             'cost_usd': _dollars(a['recommendation']['cost']),
              'trucks_assigned': a['recommendation'].get('trucks', 0)}
             for a in competing],
-        'total_planned_cost_usd': _round(sum(a['recommendation']['cost'] for a in competing)),
-        'total_do_nothing_cost_usd': _round(
+        'total_planned_cost_usd': _dollars(sum(a['recommendation']['cost'] for a in competing)),
+        'total_do_nothing_cost_usd': _dollars(
             sum(a['recommendation']['baseline_cost'] for a in competing)),
         'facilities': facilities,
     }
@@ -319,41 +395,52 @@ def system_payload(view: dict, data, system_id: str, facilities: list[dict]) -> 
 # --------------------------------------------------------------------------
 
 ROLE_RULES = (
-    'You are one agent in an oilfield monitoring hierarchy. Follow these rules '
-    'exactly:\n'
+    'You brief night-shift oilfield operators. They are tired, they are reading '
+    'on a small panel, and they need to act. Follow these rules exactly:\n'
     '1. Use ONLY numbers that appear in the JSON payload you are given. Never '
     'calculate a new figure and never estimate one.\n'
     '2. If something is not in the payload, say you do not have it.\n'
-    '3. Write plain sentences for a night-shift operator. No markdown, no '
-    'bullet characters, no headings.\n'
-    '4. Be brief. Never exceed the sentence limit you are given.'
+    '3. Write money as $905 or $3,106. Never write "905.0", "USD" or decimals '
+    'on a dollar amount.\n'
+    '4. Write times as "70 minutes" or "2.6 hours", and levels as "78% full".\n'
+    '5. Name equipment the way the panel does: "the pump", "the tank", '
+    '"Well C1". Use a full tag like S2_WELL_C1 only when naming which specific '
+    'well to shut in.\n'
+    '6. Plain sentences only. No markdown, no bullet characters, no headings, '
+    'no jargon, no restating these rules.\n'
+    '7. Start every sentence with a capital letter and end it with a full stop.\n'
+    '8. Be brief. Never exceed the sentence limit you are given.'
 )
 
 PROMPTS = {
     'component': (
-        'You are the agent for a single piece of equipment. The payload has an '
-        '"assessment" field holding the verified conclusion about your equipment. '
-        'Restate that assessment in your own words for a night-shift operator, '
-        'then support it with the two or three payload numbers that matter most. '
+        'You report one piece of equipment. The payload "assessment" field holds '
+        'the verified conclusion about it, and the "kind" field says what you '
+        'are -- a well, a tank, a pump or a pipeline. Never call yourself any '
+        'other kind of equipment, and never invent a name or tag for yourself: '
+        'the panel already shows which asset this is, so begin with "This pump", '
+        '"This tank", "This well" or "This pipeline". Say what is happening in '
+        'one short sentence, then give the one or two readings that show it. '
         'Never contradict the assessment and never compare numbers yourself -- '
-        'small differences are sensor noise and have already been accounted for. '
-        'Do not discuss cost or what should be done. Two sentences maximum.'),
+        'small differences are sensor noise and are already accounted for. Do '
+        'not mention cost or what should be done. Two sentences maximum.'),
     'facility': (
-        'You are the agent for one facility. Your component agents have reported '
-        'below. Begin your answer with the word "Suggest", state the action from '
-        'the verified plan, then give the reason starting with "based on" and '
-        'citing what the components reported and what the plan costs. Finish by '
-        'naming the next best alternative and its cost, so the operator can see '
-        'what was given up. The plan was computed and proven elsewhere; explain '
-        'it, never re-derive it. Three sentences maximum.'),
+        'You brief the operator on one facility. Write exactly three sentences, '
+        'in this order and nothing else. First: the action to take and what it '
+        'costs, starting with the word "Suggest". Second: why, in terms of what '
+        'is physically happening at the equipment and what doing nothing would '
+        'cost instead. Third: the next best option and its cost, so the operator '
+        'can see the tradeoff. The plan was already computed and proven; explain '
+        'it, never re-derive it.'),
     'system': (
-        'You are the agent for a whole system. Several tanks may be filling at '
-        'once and they share one truck fleet. Begin your answer with the word '
-        '"Suggest", state how the fleet should be split across the competing '
-        'facilities, then give the reason starting with "based on" and citing '
-        'the fleet size, how many tanks are filling, and the planned cost '
-        'against doing nothing. Say plainly if the fleet is the binding '
-        'constraint. Four sentences maximum.'),
+        'You brief the operator on a whole system, where several tanks may be '
+        'filling at once and all of them share one truck fleet. Write at most '
+        'three sentences. First: how to split the trucks, starting with the word '
+        '"Suggest", naming each facility and what it gets. Second: why that '
+        'split, including how many trucks exist, how many tanks are filling, and '
+        'the total cost against doing nothing. Third, only if it is true: say '
+        'plainly that there are not enough trucks for every tank and that is why '
+        'one of them is handled a different way.'),
 }
 
 
@@ -402,7 +489,7 @@ async def run_agent(client: httpx.AsyncClient, tier: str, model: str,
             continue
         invented = unsupported_numbers(text, payload)
         if not invented:
-            return {'tier': tier, 'text': text, 'verified': True}
+            return {'tier': tier, 'text': _tidy(text), 'verified': True}
         attempt_note = ('\n\nYour previous answer used numbers that are not in the '
                         f'payload: {invented}. Use only payload values.')
     return {'tier': tier, 'text': '', 'verified': False,
