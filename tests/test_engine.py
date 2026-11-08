@@ -4,7 +4,9 @@ Answer keys are fixtures for these tests only. The runtime engine never opens
 them -- detection works from telemetry.csv, network.json and ops.json alone.
 """
 import json
+import os
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -215,8 +217,12 @@ class ApiTests(unittest.TestCase):
         self.assertAlmostEqual(at_recommended, min(costs))
 
     def test_investigate_without_credentials_is_explicit(self):
-        response = self.client.post('/api/investigate', json={
-            'dataset': 'history/full_week', 'facility_id': 'S1_FACILITY_A'})
+        # Clear the key for the duration: a developer .env would otherwise turn
+        # this into a live API call, which burns rate limit and makes the suite
+        # depend on the network.
+        with patch.dict(os.environ, {'NVIDIA_API_KEY': ''}):
+            response = self.client.post('/api/investigate', json={
+                'dataset': 'history/full_week', 'facility_id': 'S1_FACILITY_A'})
         self.assertIn(response.status_code, (503, 404))
 
 

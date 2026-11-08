@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Boxes, ChevronRight, LoaderCircle, Network, Workflow } from "lucide-react";
 import type { AgentMessage } from "../../lib/types";
 import { agentStreamUrls } from "../../lib/api";
@@ -23,14 +23,15 @@ export default function AgentAnalysis({
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [done, setDone] = useState(false);
   const [failure, setFailure] = useState("");
-  // Re-run whenever the replay time moves, because the readings the agents
-  // were describing are no longer the readings on screen.
-  const key = `${dataset}:${facilityId}:${at}`;
-  const seen = useRef("");
-
+  // Re-runs whenever the replay time moves, because the readings the agents
+  // were describing are no longer the readings on screen. There is deliberately
+  // no "already ran this" ref guard: React StrictMode mounts, unmounts and
+  // remounts in development, so a guard like that lets the first run get
+  // aborted by the cleanup and then blocks the second from ever starting. The
+  // dependency list already prevents redundant work, and aborting in the
+  // cleanup is what makes the duplicate run harmless.
   useEffect(() => {
-    if (!active || seen.current === key) return;
-    seen.current = key;
+    if (!active) return;
     setMessages([]);
     setDone(false);
     setFailure("");
@@ -75,14 +76,14 @@ export default function AgentAnalysis({
             else setMessages((all) => [...all, message]);
           }
         }
-        setDone(true);
+        if (!controller.signal.aborted) setDone(true);
       } catch (error) {
         if (!controller.signal.aborted) setFailure((error as Error).message);
       }
     })();
 
     return () => controller.abort();
-  }, [key, active, dataset, facilityId, at]);
+  }, [active, dataset, facilityId, at]);
 
   if (!active) return null;
 
