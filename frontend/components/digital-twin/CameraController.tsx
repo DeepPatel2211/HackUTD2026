@@ -19,6 +19,7 @@ export default function CameraController({
   const { size } = useThree();
   const initialized = useRef(false);
   const lastNavigation = useRef<number | null>(null);
+  const lastViewport = useRef<{ width: number; distance: number } | null>(null);
   const framing = useMemo(() => {
     const aspect = size.width / Math.max(size.height, 1);
     const halfFov = (42 * Math.PI) / 360;
@@ -31,7 +32,7 @@ export default function CameraController({
     const minDistance = Math.max(10, intent.radius * 1.25);
     const maxDistance = Math.max(minDistance + 8, fittedDistance * 1.3);
     // Start closer to fill the stage; portrait screens retain extra framing room.
-    const presentationPadding = aspect < 1 ? 0.85 : 0.65;
+    const presentationPadding = aspect < 1 ? 1.18 : 0.65;
     return { distance: MathUtils.clamp(fittedDistance * presentationPadding, minDistance, maxDistance), minDistance, maxDistance };
   }, [intent.radius, size.width, size.height]);
   useEffect(() => {
@@ -46,8 +47,17 @@ export default function CameraController({
       new Vector3(x - panRadius, 0, z - panRadius),
       new Vector3(x + panRadius, Math.max(3, y + 1.5), z + panRadius),
     ));
-    // Resizing the canvas may update limits, but must not undo the user's pan/orbit.
-    if (initialized.current && lastNavigation.current === intent.revision) return;
+    // On rotation/major width changes, preserve pan/orbit and relative zoom while
+    // fitting the new viewport. Browser toolbar height changes do not reframe.
+    const previousViewport = lastViewport.current;
+    lastViewport.current = { width: size.width, distance: framing.distance };
+    if (initialized.current && lastNavigation.current === intent.revision) {
+      if (previousViewport && Math.abs(size.width - previousViewport.width) > previousViewport.width * 0.2) {
+        void c.dollyTo(MathUtils.clamp(c.distance * framing.distance / previousViewport.distance,
+                                     framing.minDistance, framing.maxDistance), true);
+      }
+      return;
+    }
     lastNavigation.current = intent.revision;
     const direction = new Vector3(0.64, 0.58, 0.52).normalize();
     const offset = direction.clone().multiplyScalar(framing.distance);
@@ -85,6 +95,11 @@ export default function CameraController({
         middle: CameraControlsImpl.ACTION.SCREEN_PAN,
         right: CameraControlsImpl.ACTION.SCREEN_PAN,
         wheel: CameraControlsImpl.ACTION.DOLLY,
+      }}
+      touches={{
+        one: CameraControlsImpl.ACTION.TOUCH_ROTATE,
+        two: CameraControlsImpl.ACTION.TOUCH_DOLLY_TRUCK,
+        three: CameraControlsImpl.ACTION.TOUCH_TRUCK,
       }}
       azimuthRotateSpeed={0.65}
       polarRotateSpeed={0.65}

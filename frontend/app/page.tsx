@@ -72,7 +72,11 @@ export default function ControlRoom() {
   const selectedAsset =
     selection && graph ? graph.assets[selection.assetId] : undefined;
   useEffect(() => {
-    setRailOpen(window.matchMedia("(min-width: 900px)").matches);
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const update = () => setRailOpen(desktop.matches);
+    update();
+    desktop.addEventListener("change", update);
+    return () => desktop.removeEventListener("change", update);
   }, []);
   useEffect(() => {
     if (dataset) return;
@@ -204,7 +208,7 @@ export default function ControlRoom() {
           ? facility?.pipeline.id
           : facility?.pump.id;
       if (id && graph?.assets[id]) focus(graph.assets[id]);
-      if (window.innerWidth < 900) setRailOpen(false);
+      if (window.innerWidth < 1024) setRailOpen(false);
     },
     [data, graph, focus],
   );
@@ -247,7 +251,7 @@ export default function ControlRoom() {
           radius: systemContextFrame.radius * 0.9, revision: intent.revision * 3 + 1 }
       : { ...intent, radius: !navigation.systemId ? intent.radius * 1.1 : intent.radius, revision: intent.revision * 3 + 2 };
   return (
-    <main className={"control-room " + (selectedAsset ? "inspector-open" : "")}>
+    <main className={"control-room " + (selectedAsset ? "inspector-open " : "") + (railOpen ? "mobile-rail-open" : "")}>
       <div className="scene-stage">
         {data && graph ? (
           <DigitalTwinScene
@@ -258,6 +262,7 @@ export default function ControlRoom() {
             intent={presentationIntent}
             interactions={interactions}
             inspectorOpen={Boolean(selectedAsset)}
+            incidentListOpen={railOpen}
           />
         ) : (
           <div className="scene-placeholder">
@@ -374,6 +379,7 @@ export default function ControlRoom() {
               </select>
             </label>
           </div></details>
+          {railOpen && <button className="mobile-panel-scrim" aria-label="Close incident list" onClick={() => setRailOpen(false)} />}
           <IncidentRail
             systemId={presentationNavigation.systemId}
             incidents={data.alerts}

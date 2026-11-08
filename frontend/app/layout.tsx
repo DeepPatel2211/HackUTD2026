@@ -1,4 +1,6 @@
 import "./globals.css";
+import "./mobile.css";
+export const viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#12202b" };
 export const metadata = {
   title: "NightShift AI | Oilfield Digital Twin",
   description:

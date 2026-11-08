@@ -85,7 +85,7 @@ function ContextMonitor({
 }
 
 /** Move the key and its shadow frustum with the visible system, not the whole field. */
-function SceneLighting({ graph, navigation }: { graph: SceneGraph; navigation: Navigation }) {
+function SceneLighting({ graph, navigation, compact }: { graph: SceneGraph; navigation: Navigation; compact: boolean }) {
   const system = graph.systems.find(s => s.system.id === navigation.systemId);
   const [x, , z] = system?.position || graph.center;
   const extent = system ? Math.max(system.width, system.depth) * 0.78 : graph.radius * 1.5;
@@ -100,7 +100,7 @@ function SceneLighting({ graph, navigation }: { graph: SceneGraph; navigation: N
     <hemisphereLight args={["#bfd4e0", "#263746", 0.5]}/>
     <directionalLight key={system?.system.id || "network"} target={target}
       position={[x + 42, 64, z + 24]} intensity={2.4} color="#fff1d9" castShadow
-      shadow-mapSize={system ? [2048, 2048] : [1024, 1024]}
+      shadow-mapSize={system && !compact ? [2048, 2048] : [1024, 1024]}
       shadow-camera-left={-extent} shadow-camera-right={extent}
       shadow-camera-top={extent} shadow-camera-bottom={-extent}
       shadow-camera-near={1} shadow-camera-far={700}
@@ -118,16 +118,16 @@ function SceneLighting({ graph, navigation }: { graph: SceneGraph; navigation: N
   </>;
 }
 
-function AnimationTicker({ active }: { active: boolean }) {
+function AnimationTicker({ active, compact }: { active: boolean; compact: boolean }) {
   const invalidate = useThree(state => state.invalidate);
   useEffect(() => {
     if (!active) return;
     // Camera controls request their own frames; ambient animations need only 30fps.
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") invalidate();
-    }, 1000 / 30);
+    }, 1000 / (compact ? 24 : 30));
     return () => window.clearInterval(timer);
-  }, [active, invalidate]);
+  }, [active, compact, invalidate]);
   return null;
 }
 
@@ -139,6 +139,7 @@ export default function DigitalTwinScene({
   intent,
   interactions,
   inspectorOpen = false,
+  incidentListOpen = false,
 }: {
   graph: SceneGraph;
   data: Dashboard;
@@ -147,9 +148,21 @@ export default function DigitalTwinScene({
   intent: CameraIntent;
   interactions: SceneInteractions;
   inspectorOpen?: boolean;
+  incidentListOpen?: boolean;
 }) {
   const [contextLost, setContextLost] = useState(false);
   const [rendererKey, setRendererKey] = useState(0);
+  const [compact, setCompact] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    const small = window.matchMedia("(max-width: 1023px)");
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => { setCompact(small.matches); setReducedMotion(reduced.matches); };
+    update();
+    small.addEventListener("change", update);
+    reduced.addEventListener("change", update);
+    return () => { small.removeEventListener("change", update); reduced.removeEventListener("change", update); };
+  }, []);
   useEffect(() => {
     const retry = () => { setContextLost(false); setRendererKey(key => key + 1); };
     window.addEventListener("nightshift:retry-renderer", retry);
@@ -161,12 +174,12 @@ export default function DigitalTwinScene({
     <SceneBoundary key={rendererKey}>
       <div
         className="webgl-surface"
-        aria-label="Interactive oilfield digital twin. Drag to orbit, scroll to zoom, right-drag to pan."
+        aria-label="Interactive oilfield digital twin. Drag to orbit; pinch with two fingers to zoom and pan. Mouse: scroll to zoom, right-drag to pan."
       >
         <Canvas
           frameloop="demand"
           shadows="percentage"
-          dpr={[1, 1.25]}
+          dpr={compact ? 1 : [1, 1.25]}
           performance={{ min: 0.7, max: 1, debounce: 250 }}
           camera={{
             position: [110, 130, 110],
@@ -189,7 +202,7 @@ export default function DigitalTwinScene({
               attach="fog"
               args={["#11212d", graph.radius * 5, graph.radius * 12]}
             />
-            <SceneLighting graph={graph} navigation={navigation}/>
+            <SceneLighting graph={graph} navigation={navigation} compact={compact}/>
             <GroundPlane size={graph.radius * 12} center={visibleSystem ? [visibleSystem.position[0], visibleSystem.position[2]] : [0, 0]} radius={visibleSystem ? Math.max(visibleSystem.width, visibleSystem.depth) * 1.8 : graph.radius * 2}/>
             {graph.systems.filter(system => !navigation.systemId || system.system.id === navigation.systemId).map((system) => (
               <SystemScene
@@ -204,10 +217,10 @@ export default function DigitalTwinScene({
             ))}
             <CameraController intent={intent} sceneRadius={graph.radius} inspectionOpen={inspectorOpen}/>
             <AdaptiveDpr/>
-            <AnimationTicker active={data.facilities.some(f => f.pump_status === 1 || f.category === "pump_failure")}/>
+            <AnimationTicker compact={compact} active={!reducedMotion && !(compact && (inspectorOpen || incidentListOpen)) && data.facilities.some(f => f.pump_status === 1 || f.category === "pump_failure")}/>
             <ContextMonitor
               onLost={setContextLost}
-              topology={"site-pads-3:" + data.start + ":" + data.end + ":" + (navigation.systemId || "all") + ":" + (navigation.facilityId || "all") + ":" + graph.systems
+              topology={"site-pads-3:" + compact + ":" + data.start + ":" + data.end + ":" + (navigation.systemId || "all") + ":" + (navigation.facilityId || "all") + ":" + graph.systems
                 .map(
                   (s) =>
                     `${s.system.id}:${s.facilities.map((f) => `${f.facility.id}:${f.facility.wells.length}`).join(",")}`,
