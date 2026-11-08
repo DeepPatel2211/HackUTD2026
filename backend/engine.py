@@ -16,7 +16,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from .dataset import Dataset, Series, ROOT
-from .detect import Baselines, Event, detect_all
+from .detect import Baselines, Event, detect_all, evidence_confidence
 from .planner import (FacilityProblem, allocate, candidates, hours_to_limit,
                       reuse_possible, simulate)
 
@@ -135,7 +135,7 @@ class Analysis:
             'onset_unix': event.onset_unix,
             'alarm_unix': event.alarm_unix,
             'end_unix': None,
-            'confidence': round(event.confidence, 3),
+            **evidence_confidence(data, facility, event.category, event.onset_unix, now, self.baselines),
             'evidence': list(event.evidence),
             'peak_sigma': round(event.peak_sigma, 2),
             'level_pct': round(level, 2),
@@ -172,7 +172,7 @@ class Analysis:
         elapsed_h = (now - event.onset_unix) / 3600.0
         horizon = max(0.0, data.ops['expected_repair_hours']['pump_failure'] - elapsed_h)
         alert['repair_hours_remaining'] = round(horizon, 3)
-        alert['_problem'] = FacilityProblem(data, facility, level, horizon, water, revenue)
+        alert['_problem'] = FacilityProblem(data, facility, level, horizon, water, revenue, now=now)
         return alert
 
     def _share_trucks(self, alerts: list[dict], now: int) -> None:
@@ -200,7 +200,7 @@ class Analysis:
                     'baseline_cost': plan['baseline_cost'],
                     'verified': plan.get('verified', False), 'tripped': plan['tripped'],
                     'trucks': plan['trucks'], 'trips_per_truck': plan.get('trips', 0),
-                    'dispatch_delay_min': round(plan.get('delay_h', 0.0) * 60, 1),
+                    'dispatch_delay_min': round(plan.get('delay_h', 0.0) * 60, 9),
                     'trace': plan['trace'], 'actions': plan['actions'],
                     # What the operator gave up by taking this plan, for the UI.
                     'alternatives': [{'label': p['label'], 'cost': p['cost'],
@@ -226,7 +226,10 @@ class Analysis:
             'onset_unix': event.onset_unix,
             'end_ts': _iso(event.end_unix) if status == 'resolved' else None,
             'end_unix': event.end_unix if status == 'resolved' else None,
-            'confidence': round(event.confidence, 3),
+            'confidence': evidence_confidence(data, data.facilities[event.facility_id], event.category,
+                                              event.onset_unix,
+                                              min(now, event.end_unix - data.step) if event.end_unix else now,
+                                              self.baselines)['confidence'],
             'evidence': list(event.evidence),
             'hours_to_limit': None,
             'recommended_actions': [],
@@ -245,11 +248,14 @@ class Analysis:
                  'On this network no truck can finish one job and reach a second tank '
                  'before the repair ends, so each dispatch holds its trucks for the '
                  'whole response.')
-        return ('Plans are chosen by replaying every combination of truck dispatches and '
-                'well shut-ins against the tank and keeping the cheapest that never '
-                'reaches the shutdown limit. Shut-ins start as late as the tank allows. '
-                'Concurrent failures in one system are solved together against that '
-                "system's fleet. " + reuse)
+        return ('Joint optimization considers every feasible truck-count/trip-count option, '
+                'dispatch ordering, shared vehicle availability, and independent well shut-in '
+                'times. Final actions are re-simulated after scheduling. Each facility uses '
+                'one simultaneous truck group with equal trips per truck. Measured well '
+                'inflows are held constant and repair duration is fixed by ops.json. '
+                'This is optimal only within that explicit model and numerical tolerances, '
+                'not an unrestricted claim of global field optimality. ' + reuse)
+
 
 
 def _alert_order(alert: dict) -> tuple:

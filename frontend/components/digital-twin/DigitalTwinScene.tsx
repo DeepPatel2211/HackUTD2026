@@ -138,6 +138,7 @@ export default function DigitalTwinScene({
   selection,
   intent,
   interactions,
+  inspectorOpen = false,
 }: {
   graph: SceneGraph;
   data: Dashboard;
@@ -145,6 +146,7 @@ export default function DigitalTwinScene({
   selection: Selection | null;
   intent: CameraIntent;
   interactions: SceneInteractions;
+  inspectorOpen?: boolean;
 }) {
   const [contextLost, setContextLost] = useState(false);
   const [rendererKey, setRendererKey] = useState(0);
@@ -182,10 +184,10 @@ export default function DigitalTwinScene({
           fallback={<Unavailable />}
         >
           <LabelPortal.Provider value={labelPortal}>
-            <color attach="background" args={["#1a2a36"]} />
+            <color attach="background" args={["#11212d"]} />
             <fog
               attach="fog"
-              args={["#1a2a36", graph.radius * 5, graph.radius * 12]}
+              args={["#11212d", graph.radius * 5, graph.radius * 12]}
             />
             <SceneLighting graph={graph} navigation={navigation}/>
             <GroundPlane size={graph.radius * 12} center={visibleSystem ? [visibleSystem.position[0], visibleSystem.position[2]] : [0, 0]} radius={visibleSystem ? Math.max(visibleSystem.width, visibleSystem.depth) * 1.8 : graph.radius * 2}/>
@@ -200,12 +202,12 @@ export default function DigitalTwinScene({
                 interactions={interactions}
               />
             ))}
-            <CameraController intent={intent} sceneRadius={graph.radius} />
+            <CameraController intent={intent} sceneRadius={graph.radius} inspectionOpen={inspectorOpen}/>
             <AdaptiveDpr/>
             <AnimationTicker active={data.facilities.some(f => f.pump_status === 1 || f.category === "pump_failure")}/>
             <ContextMonitor
               onLost={setContextLost}
-              topology={"studio-rig-2:" + data.start + ":" + data.end + ":" + (navigation.systemId || "all") + ":" + (navigation.facilityId || "all") + ":" + graph.systems
+              topology={"site-pads-3:" + data.start + ":" + data.end + ":" + (navigation.systemId || "all") + ":" + (navigation.facilityId || "all") + ":" + graph.systems
                 .map(
                   (s) =>
                     `${s.system.id}:${s.facilities.map((f) => `${f.facility.id}:${f.facility.wells.length}`).join(",")}`,

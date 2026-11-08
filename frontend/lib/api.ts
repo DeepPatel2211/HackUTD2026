@@ -21,6 +21,9 @@ function query(dataset: string, at?: number | null) {
   return params;
 }
 export const api = {
+  handoff: (dataset: string, at: number, signal?: AbortSignal) =>
+    request<{ now: number; summary: string[]; planned_cost: number; avoided_cost: number; scope: string }>(
+      `/api/handoff?${query(dataset, at)}`, { signal }),
   datasets: (signal?: AbortSignal) =>
     request<string[]>("/api/datasets", { signal }),
   dashboard: (dataset: string, at?: number | null, signal?: AbortSignal) =>

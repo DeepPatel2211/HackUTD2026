@@ -60,9 +60,11 @@ export type Incident = {
   system_id: string;
   category: IncidentCategory;
   onset_unix: number;
+  alarm_unix?: number;
   evidence: string[];
   hours_to_limit: number | null;
   confidence: number;
+  confidence_basis?: { method: string; samples: number; window_readings: number; calibrated_probability: boolean };
   recommendation: Plan;
 };
 export type Dashboard = {

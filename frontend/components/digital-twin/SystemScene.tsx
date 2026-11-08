@@ -1,7 +1,6 @@
 "use client";
 import { AssetLabel as Html } from "./AssetLabel";
-import { useEffect, useMemo } from "react";
-import { MeshStandardMaterial } from "three";
+import { useMemo } from "react";
 import Platform from "./Platform";
 import SiteDetails from "./SiteDetails";
 import type { Dashboard, Navigation, Selection, Vec3 } from "../../lib/types";
@@ -34,9 +33,6 @@ export default function SystemScene({
   const incidents = data.alerts.filter((a) => a.system_id === layout.system.id);
   const affected = new Set(incidents.map((a) => a.facility_id)).size;
   const tone = incidents.some(a => a.category === 'pump_failure' || a.category === 'pipeline_leak') ? 'fault' : incidents.length ? 'warning' : 'clear';
-  const edgeColor = tone === 'fault' ? colors.fault : tone === 'warning' ? colors.warning : colors.selected;
-  const edgeMaterial = useMemo(() => new MeshStandardMaterial({ color: edgeColor, emissive: edgeColor, emissiveIntensity: 0.18, metalness: 0.35, roughness: 0.4 }), [edgeColor]);
-  useEffect(() => () => edgeMaterial.dispose(), [edgeMaterial]);
   const routes = useMemo(
     () =>
       layout.facilities.map((f) => {
@@ -55,24 +51,6 @@ export default function SystemScene({
   );
   return (
     <group position={layout.position}>
-      <Platform width={layout.width} depth={layout.depth} height={3} top={-0.45} color="#223440"/>
-      <SiteDetails width={layout.width} depth={layout.depth} top={-0.45}/>
-      {[-1, 1].map((side) => (
-        <Box
-          key={side}
-          position={[(side * layout.width) / 2, -0.45, 0]}
-          size={[0.07, 0.06, layout.depth]}
-          material={edgeMaterial}
-        />
-      ))}
-      {[-1, 1].map((side) => (
-        <Box
-          key={side}
-          position={[0, -0.45, (side * layout.depth) / 2]}
-          size={[layout.width, 0.06, 0.07]}
-          material={edgeMaterial}
-        />
-      ))}
       {!navigation.systemId && <Html
         center
         position={[0, 0.5, layout.depth / 2 + 1.5]}
@@ -134,8 +112,8 @@ export default function SystemScene({
           </group>
         );
       })}
-      <group position={layout.disposal}><Platform width={7} depth={5} height={0.45} top={0}/></group>
-      <group position={layout.yard}><Platform width={8} depth={5} height={0.45} top={0}/></group>
+      <group position={layout.disposal}><Platform width={8} depth={6} height={1.4} top={0}/><SiteDetails width={8} depth={6} top={0}/></group>
+      <group position={layout.yard}><Platform width={8} depth={5} height={1.4} top={0}/></group>
       <AssetAssembly
         asset={graph.assets[layout.system.disposal_site.id]}
         position={layout.disposal}
@@ -143,7 +121,7 @@ export default function SystemScene({
         onSelect={interactions.onSelect}
         onFocus={interactions.onFocus}
         label={`Disposal site · ${layout.system.id}`}
-        showLabel={navigation.systemId === layout.system.id}
+        showLabel={navigation.systemId === layout.system.id && !selection}
         ringRadius={4}
       >
         <DisposalModel />

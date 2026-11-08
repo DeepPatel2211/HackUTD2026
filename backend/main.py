@@ -130,22 +130,23 @@ def handoff(dataset: str, at: int | None = None):
     if not view['alerts']:
         lines.append('Field is quiet. No problems detected in the current readings.')
     if failures:
-        soonest = failures[0]
-        lines.append(
-            f'{len(failures)} pump failure(s) are filling tanks right now. The tightest is '
-            f'{soonest["facility_id"]}, about {soonest["hours_to_limit"]:.1f} hours from an '
-            f'automatic shut-in.')
+        data = load(dataset).data
+        tripped = [a for a in failures if all(
+            data.value(w['id'], 'status', view['now'], 1) == 0
+            for w in data.facilities[a['facility_id']]['wells'])]
+        filling = [a for a in failures if a not in tripped]
+        lines.append(f'{len(failures)} active pump failure(s); {len(tripped)} facilities already shut in automatically.')
+        if filling:
+            soonest = filling[0]
+            lines.append(f'Priority: {soonest["facility_id"]}, about {soonest["hours_to_limit"]:.1f} hours to shutdown.')
     for alert in failures:
         rec = alert['recommendation']
         lines.append(
-            f'{alert["facility_id"]}: {rec["label"]}. That costs about ${rec["cost"]:,.0f} '
-            f'against ${rec["baseline_cost"]:,.0f} if nobody acts.')
-    for alert in inspections:
-        kind = 'leaking' if alert['category'] == 'pipeline_leak' else 'wearing out'
-        lines.append(
-            f'{alert["asset_id"]} is {kind} ({alert["confidence"] * 100:.0f}% confidence, '
-            f'peak deviation {alert["peak_sigma"]:.1f} sigma). It still moves water, so there '
-            f'is no countdown -- send an inspector.')
+            f'{alert["facility_id"]}: {rec["label"]} (${rec["cost"]:,.0f}).')
+    if inspections:
+        lines.append('Inspection needed: ' + '; '.join(
+            f'{a["facility_id"]} ({a["category"].replace("_", " ")})' for a in inspections) +
+            '. No shutdown countdown for these faults.')
     if failures:
         lines.append(f'Total planned spend ${spend:,.0f}, avoiding about ${avoided:,.0f} '
                      f'in lost production.')
@@ -186,8 +187,11 @@ def fleet_study(dataset: str, at: int | None = None,
             for alert in group:
                 facility = data.facilities[alert['facility_id']]
                 water, revenue = analysis.well_rates(facility, view['now'])
-                problem = FacilityProblem(data, facility, alert['level_pct'],
-                                          alert['repair_hours_remaining'], water, revenue)
+                level = data.value(facility['tank']['id'], 'level_pct', view['now'])
+                remaining = max(0, data.ops['expected_repair_hours']['pump_failure'] -
+                                (view['now'] - alert['onset_unix']) / 3600)
+                problem = FacilityProblem(data, facility, level, remaining,
+                                          water, revenue, now=view['now'])
                 problem.fleet = size
                 problems.append(problem)
             options = {p.facility_id: candidates(p) for p in problems}

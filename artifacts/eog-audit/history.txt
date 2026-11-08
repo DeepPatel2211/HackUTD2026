@@ -1,0 +1,16 @@
+=== full_week ===
+  detected 23/23, invented 0, median alarm latency +0 min
+=== snapshot_2026-10-08T1200 ===
+  detected 13/13, invented 0, median alarm latency +15 min
+  live pump-failure plan cost $3,106 vs reference $3,108
+  alert order matches the key: ['S2_FACILITY_B', 'S2_FACILITY_C', 'S2_FACILITY_A']
+=== snapshot_2026-10-09T0330 ===
+  detected 15/15, invented 0, median alarm latency +5 min
+  live pump-failure plan cost $1,810 vs reference $1,810
+  alert order matches the key: ['S4_FACILITY_C']
+=== snapshot_2026-10-10T0900 ===
+  detected 21/21, invented 0, median alarm latency +0 min
+  live pump-failure plan cost $3,022 vs reference $3,095
+  alert order matches the key: ['S4_FACILITY_A', 'S4_FACILITY_C', 'S4_FACILITY_D']
+
+This is an offline check against labels, not a guarantee on unseen data.

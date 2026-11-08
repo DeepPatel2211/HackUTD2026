@@ -122,7 +122,7 @@ export default function ReplayTimeline({
         >
           {SPEEDS.map((value) => (
             <option key={value} value={value}>
-              {span(data.step * value)}/frame
+              {span(data.step * value).toLowerCase()} / frame
             </option>
           ))}
         </select>

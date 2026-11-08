@@ -3,8 +3,6 @@ import {
   Download,
   RotateCcw,
   Waves,
-  Layers3,
-  Database,
 } from "lucide-react";
 import type { Dashboard, Navigation } from "../../lib/types";
 import { useState } from "react";
@@ -54,14 +52,13 @@ export default function TopBar({
           NightShift <em>AI</em>
         </span>
       </button>
-      <span className="brand-description">Oilfield Operations Digital Twin</span>
-      <label className="system-control"><Layers3 size={18}/>
+      <label className="system-control"><span className="view-caption">3D view</span>
         <select aria-label="Navigate to system" value={navigation.systemId || ''} disabled={!data} onChange={e => onNavigate(e.target.value ? { systemId: e.target.value } : {})}>
           <option value="">All systems</option>{data?.systems.map(system => <option key={system.id} value={system.id}>System {system.id}</option>)}
         </select>
       </label>
       <label className="dataset-control">
-        <span className="dataset-caption"><Database size={17}/>Dataset</span>
+        <span className="dataset-caption">Dataset</span>
         <select
           value={dataset}
           aria-label="Select telemetry dataset"
@@ -100,7 +97,7 @@ export default function TopBar({
           className="icon-button"
           onClick={onReset}
           disabled={!data}
-          title="Reset current view"
+          title="Reset current camera"
           aria-label="Reset current view"
         >
           <RotateCcw size={16} />

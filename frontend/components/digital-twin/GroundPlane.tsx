@@ -10,9 +10,9 @@ export default function GroundPlane({ size, center = [0, 0], radius = size / 4 }
     const cx = 160 + center[0] / size * 320;
     const cy = 160 - center[1] / size * 320;
     const gradient = context.createRadialGradient(cx,cy,0,cx,cy,radius / size * 320);
-    gradient.addColorStop(0,'#344a58');
-    gradient.addColorStop(.5,'#293e4c');
-    gradient.addColorStop(1,'#192c39');
+    gradient.addColorStop(0,'#20323f');
+    gradient.addColorStop(.5,'#192b38');
+    gradient.addColorStop(1,'#11212d');
     context.fillStyle = gradient; context.fillRect(0,0,320,320);
     const map = new CanvasTexture(canvas);
     map.colorSpace = SRGBColorSpace;
@@ -20,10 +20,10 @@ export default function GroundPlane({ size, center = [0, 0], radius = size / 4 }
     return map;
   },[size, center[0], center[1], radius]);
   useEffect(() => () => texture.dispose(),[texture]);
-  return <group><mesh rotation={[-Math.PI/2,0,0]} position={[0,-3.51,0]}>
+  return <group><mesh rotation={[-Math.PI/2,0,0]} position={[0,-1.46,0]}>
     <planeGeometry args={[size,size]}/>
     <meshBasicMaterial map={texture} toneMapped={false}/>
-  </mesh><mesh rotation={[-Math.PI/2,0,0]} position={[0,-3.5,0]} receiveShadow>
+  </mesh><mesh rotation={[-Math.PI/2,0,0]} position={[0,-1.45,0]} receiveShadow>
     <planeGeometry args={[size,size]}/><shadowMaterial transparent opacity={.38} depthWrite={false}/>
   </mesh></group>;
 }

@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import json
 import re
-import resource
+try:
+    import resource
+except ImportError:  # Windows has no resource module; keep the KPI checks usable.
+    resource = None
 import sys
 import time
 
@@ -219,9 +222,11 @@ def response(folders: list[str]) -> None:
             for alert in group:
                 facility = data.facilities[alert['facility_id']]
                 water, revenue = analysis.well_rates(facility, view['now'])
-                problem = FacilityProblem(data, facility, alert['level_pct'],
-                                          alert['repair_hours_remaining'],
-                                          water, revenue)
+                level = data.value(facility['tank']['id'], 'level_pct', view['now'])
+                remaining = max(0, data.ops['expected_repair_hours']['pump_failure'] -
+                                (view['now'] - alert['onset_unix']) / 3600)
+                problem = FacilityProblem(data, facility, level, remaining,
+                                          water, revenue, now=view['now'])
                 problems.append(problem)
                 options[problem.facility_id] = candidates(problem)
             fleet = data.ops['systems'][system_id]['emergency_fleet_size']
@@ -271,9 +276,11 @@ def fleet(folders: list[str], max_trucks: int = 6) -> None:
                 for alert in group:
                     facility = data.facilities[alert['facility_id']]
                     water, revenue = analysis.well_rates(facility, view['now'])
-                    problem = FacilityProblem(data, facility, alert['level_pct'],
-                                              alert['repair_hours_remaining'],
-                                              water, revenue)
+                    level = data.value(facility['tank']['id'], 'level_pct', view['now'])
+                    remaining = max(0, data.ops['expected_repair_hours']['pump_failure'] -
+                                    (view['now'] - alert['onset_unix']) / 3600)
+                    problem = FacilityProblem(data, facility, level, remaining,
+                                              water, revenue, now=view['now'])
                     problem.fleet = size
                     problems.append(problem)
                     options[problem.facility_id] = candidates(problem)
@@ -330,9 +337,12 @@ def engine(folders: list[str]) -> None:
         print(f'{folder:<28}{rows:>10,}{parse:>8.2f}s{detect:>8.2f}s'
               f'{cold * 1000:>10.1f}ms{warm * 1000:>10.2f}ms{rows / parse:>11,.0f}')
 
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    peak = peak / 1e6 if sys.platform == 'darwin' else peak / 1e3   # bytes vs KiB
-    print(f'\n  peak resident memory across every dataset loaded above: {peak:,.0f} MB')
+    if resource is not None:
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        peak = peak / 1e6 if sys.platform == 'darwin' else peak / 1e3   # bytes vs KiB
+        print(f'\n  peak resident memory across every dataset loaded above: {peak:,.0f} MB')
+    else:
+        print('\n  peak resident memory: unavailable on this platform')
     print('  Detection sweeps a recording once; replay frames are then filters, which')
     print('  is why a frame costs milliseconds and a cached one costs nothing.')
 

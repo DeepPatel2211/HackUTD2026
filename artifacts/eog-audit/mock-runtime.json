@@ -1,0 +1,186 @@
+[
+  {
+    "dataset": "history/mock_test_2026-10-10T1530",
+    "frames_checked": 177,
+    "pump_plans_replayed": 106,
+    "runtime_files_opened": [
+      "network.json",
+      "ops.json",
+      "telemetry.csv"
+    ],
+    "detected_events": 23,
+    "end_alerts": [
+      {
+        "facility_id": "S5_FACILITY_C",
+        "category": "pump_failure",
+        "recommendation": {
+          "label": "1 truck, 1 trip each",
+          "cost": 905.0,
+          "baseline_cost": 5639.32,
+          "verified": true,
+          "tripped": false,
+          "trucks": 1,
+          "trips_per_truck": 1,
+          "dispatch_delay_min": 0.0,
+          "trace": [
+            {
+              "hour": 0.0,
+              "level_pct": 73.48
+            },
+            {
+              "hour": 0.0,
+              "level_pct": 73.48
+            },
+            {
+              "hour": 1.666666667,
+              "level_pct": 88.50199074374514
+            },
+            {
+              "hour": 1.666666667,
+              "level_pct": 63.50199074374514
+            },
+            {
+              "hour": 4.5,
+              "level_pct": 89.039375
+            }
+          ],
+          "actions": [
+            {
+              "type": "dispatch_truck",
+              "facility_id": "S5_FACILITY_C",
+              "trucks": 1,
+              "trips_per_truck": 1,
+              "arrival_hours": [
+                1.666666667
+              ],
+              "busy_until_hour": 5.833333333
+            }
+          ],
+          "alternatives": [
+            {
+              "label": "1 truck, 1 trip each",
+              "cost": 905.0,
+              "tripped": false,
+              "trucks": 1
+            },
+            {
+              "label": "2 trucks, 1 trip each",
+              "cost": 1810.0,
+              "tripped": false,
+              "trucks": 2
+            },
+            {
+              "label": "shut in S5_WELL_C2 now + shut in S5_WELL_C3 in 159.1 min",
+              "cost": 3054.12,
+              "tripped": false,
+              "trucks": 0
+            },
+            {
+              "label": "Accept the automatic shut-in",
+              "cost": 5639.32,
+              "tripped": true,
+              "trucks": 0
+            }
+          ],
+          "fleet_size": 2,
+          "shared_with": [
+            "S5_FACILITY_B"
+          ]
+        }
+      },
+      {
+        "facility_id": "S5_FACILITY_B",
+        "category": "pump_failure",
+        "recommendation": {
+          "label": "1 truck, 1 trip each",
+          "cost": 905.0,
+          "baseline_cost": 4331.12,
+          "verified": true,
+          "tripped": false,
+          "trucks": 1,
+          "trips_per_truck": 1,
+          "dispatch_delay_min": 0.0,
+          "trace": [
+            {
+              "hour": 0.0,
+              "level_pct": 59.62
+            },
+            {
+              "hour": 0.0,
+              "level_pct": 59.62
+            },
+            {
+              "hour": 1.5,
+              "level_pct": 73.80083333333333
+            },
+            {
+              "hour": 1.5,
+              "level_pct": 53.80083333333334
+            },
+            {
+              "hour": 5.0,
+              "level_pct": 86.88944444444445
+            }
+          ],
+          "actions": [
+            {
+              "type": "dispatch_truck",
+              "facility_id": "S5_FACILITY_B",
+              "trucks": 1,
+              "trips_per_truck": 1,
+              "arrival_hours": [
+                1.5
+              ],
+              "busy_until_hour": 5.416666667
+            }
+          ],
+          "alternatives": [
+            {
+              "label": "1 truck, 1 trip each",
+              "cost": 905.0,
+              "tripped": false,
+              "trucks": 1
+            },
+            {
+              "label": "2 trucks, 1 trip each",
+              "cost": 1810.0,
+              "tripped": false,
+              "trucks": 2
+            },
+            {
+              "label": "shut in S5_WELL_B1 in 111.9 min",
+              "cost": 2586.36,
+              "tripped": false,
+              "trucks": 0
+            },
+            {
+              "label": "Accept the automatic shut-in",
+              "cost": 4331.12,
+              "tripped": true,
+              "trucks": 0
+            }
+          ],
+          "fleet_size": 2,
+          "shared_with": [
+            "S5_FACILITY_C"
+          ]
+        }
+      }
+    ],
+    "fleets": {
+      "S1": 2,
+      "S2": 2,
+      "S3": 3,
+      "S4": 2,
+      "S5": 2
+    },
+    "trucking": {
+      "truck_capacity_bbl": 150,
+      "cost_per_trip": 905
+    },
+    "repair_rules": {
+      "pump_failure": 6
+    },
+    "result": "PASS"
+  }
+]

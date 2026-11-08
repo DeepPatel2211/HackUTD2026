@@ -1,0 +1,49 @@
+NIGHTSHIFT KPI REPORT
+
+DETECTION   scored against answer_key.json, which the app never loads
+=====================================================================
+dataset                         found  invented  precision   recall   alarm lag   warning
+full_week                     23/23           0      0.981    0.965       +0 min    4.6 h
+snapshot_2026-10-08T1200      13/13           0      0.990    0.943      +15 min    4.6 h
+snapshot_2026-10-09T0330      15/15           0      0.992    0.955       +5 min    4.6 h
+snapshot_2026-10-10T0900      21/21           0      0.981    0.963       +0 min    4.8 h
+
+  found/invented count whole events; precision and recall are per reading,
+  per asset. "alarm lag" is onset to alarm; "warning" is median hours left
+  before an automatic shut-in at the moment the alarm fired.
+
+RESPONSE    cost of the recommended plans at each dataset's "now"
+=================================================================
+dataset                       do nothing     greedy      ours   reference    avoided   trucks
+full_week                                        -- no pump failure live at this timestamp --
+snapshot_2026-10-08T1200         $12,120     $5,109    $3,106      $3,108     $9,013      2/2
+snapshot_2026-10-09T0330          $7,549     $1,810    $1,810      $1,810     $5,739      2/2
+snapshot_2026-10-10T0900         $11,901     $3,022    $3,022      $3,095     $8,879      2/2
+
+  "do nothing" lets every tank trip and shut its wells in automatically.
+  "greedy" is first-come-first-served on the shared trucks; "ours" searches
+  the combinations. "reference" is the answer key's own plan, where priced.
+
+FLEET       smallest yard that buys everything a bigger one would
+=================================================================
+dataset                       system  owned  needed   at owned   at needed              verdict
+snapshot_2026-10-08T1200          S2      2       3     $3,106      $2,715       short 1 ($391)
+snapshot_2026-10-09T0330          S4      2       2     $1,810      $1,810          right-sized
+snapshot_2026-10-10T0900          S4      2       3     $3,022      $2,756       short 1 ($266)
+
+  "needed" is where the cost curve flattens: past it another truck buys
+  nothing for this snapshot. A yard that is short shows what the gap costs.
+
+ENGINE      wall-clock cost of a cold load and a replay frame
+=============================================================
+dataset                           rows    parse   detect  frame cold  frame warm     rows/s
+full_week                      393,120   10.27s    1.68s      40.3ms      0.00ms     38,291
+snapshot_2026-10-08T1200       196,755    5.27s    0.80s       7.2ms      0.00ms     37,340
+snapshot_2026-10-09T0330       233,025    4.76s    0.81s      48.8ms      0.00ms     48,990
+snapshot_2026-10-10T0900       302,055    6.43s    0.99s      51.0ms      0.00ms     46,985
+
+  peak resident memory: unavailable on this platform
+  Detection sweeps a recording once; replay frames are then filters, which
+  is why a frame costs milliseconds and a cached one costs nothing.
+
+Scored offline against labelled history. Not a guarantee on unseen data.

@@ -98,12 +98,13 @@ export default function AssetInspector({
       </div>
       {!expanded && <div className="asset-summary">
         <div className="summary-heading">
-          <Activity size={29} style={{ color: state.color }}/>
+          {asset.kind === 'pump' ? <svg className="pump-icon" width="31" height="31" viewBox="0 0 32 32" fill="none" stroke={state.color} strokeWidth="1.6" aria-hidden="true"><circle cx="10" cy="17" r="5"/><rect x="15" y="12" width="10" height="10" rx="2"/><path d="M4 26h25M7 22v4m15-4v4M6 13V6h7v5m12 6h4V9h-4M18 12v10m3-10v10"/></svg> : <Activity size={29} style={{ color: state.color }}/>}
           <div><h2>{friendlyName}</h2><p>{facility ? facility.id.replace(/^.*_FACILITY_/, 'Facility ') + ' · ' : ''}System {asset.systemId}</p></div>
-          <span className="state-pill" style={{ color: state.color, borderColor: state.color + '55' }}>{state.label}</span>
+          <span className="state-pill" style={{ color: state.color, borderColor: state.color + '55' }}>{state.label === "Pump fault" ? "Fault detected" : state.label}</span>
           <button className="summary-close icon-button" onClick={onClose} aria-label="Close asset summary"><X size={15}/></button>
         </div>
         <dl className="summary-evidence">
+          {incident && <div><dt><Clock3 size={16}/>Incident began</dt><dd><time dateTime={new Date(incident.onset_unix * 1000).toISOString()}>{new Date(incident.onset_unix * 1000).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC", hour12: false })} UTC</time><br/><span>{Math.max(0, Math.floor((data.now - incident.onset_unix) / 3600))}h {Math.max(0, Math.floor((data.now - incident.onset_unix) / 60) % 60)}m elapsed</span></dd></div>}
           <div><dt><Activity size={16}/>Evidence</dt><dd>{asset.kind === 'pump' && facility ? `${state.label} · Output ${formatValue(facility.flow_bpd)} bbl/day` : incident?.evidence[0] || state.label}</dd></div>
           <div><dt><Clock3 size={16}/>{incident?.category === 'pump_failure' ? 'Shutdown risk' : 'Assessment'}</dt><dd className={incident ? 'exception-value' : ''} style={incident?.category === 'pump_degradation' ? { color: state.color } : undefined}>{incident?.category === 'pump_failure' && incident.hours_to_limit != null ? `${incident.hours_to_limit.toFixed(1)}h to shutdown` : incident ? 'Inspection required' : 'No active incident'}</dd></div>
         </dl>
@@ -124,7 +125,7 @@ export default function AssetInspector({
             {state.label}
           </p>
         </div>
-        <button className="focus-button" onClick={onFocus}>
+        <button className="focus-button" onClick={onFocus} disabled={disabled}>
           <Crosshair size={14} />
           Focus equipment
           <ChevronRight size={13} />
@@ -158,6 +159,7 @@ export default function AssetInspector({
                 return (
                   <button
                     key={name}
+                    disabled={disabled}
                     className={metric === name ? "selected" : ""}
                     onClick={() =>
                       onSelect({ assetId: asset.id, metric: name })
@@ -283,8 +285,8 @@ export default function AssetInspector({
               ))}
             </ul>
             <p className="fine-print">
-              Rule confidence {Math.round(incident.confidence * 100)}% · not a
-              calibrated probability
+              Evidence confidence {(incident.confidence * 100).toFixed(1)}% · not a calibrated probability
+              {incident.confidence_basis && <><br/>{incident.confidence_basis.method} · {incident.confidence_basis.samples} recorded readings at this replay time.</>}
             </p>
           </section>
         )}

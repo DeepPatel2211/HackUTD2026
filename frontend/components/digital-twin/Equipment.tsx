@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AssetLabel as Html } from "./AssetLabel";
+import { Line } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Asset, Selection, Vec3 } from "../../lib/types";
 import { colors, metricInfo } from "../../lib/operational-status";
 
 const steel = new THREE.MeshStandardMaterial({
-  color: "#a4b6bf",
-  metalness: 0.62,
+  color: "#bdc9ce",
+  metalness: 0.65,
   roughness: 0.38,
 });
 const trim = new THREE.MeshStandardMaterial({
@@ -31,7 +32,7 @@ const rubber = new THREE.MeshStandardMaterial({
   roughness: 0.85,
 });
 const teal = new THREE.MeshStandardMaterial({
-  color: "#94abb4",
+  color: "#a8bbc3",
   emissive: "#66c7c9",
   emissiveIntensity: 0.035,
   metalness: 0.55,
@@ -183,6 +184,7 @@ export function AssetAssembly({
   showLabel = false,
   ringRadius = 1.5,
   anchor = [0, 0, 0],
+  statusColor,
 }: {
   asset: Asset;
   position: Vec3;
@@ -194,6 +196,7 @@ export function AssetAssembly({
   showLabel?: boolean;
   ringRadius?: number;
   anchor?: Vec3;
+  statusColor?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   const select = (event: ThreeEvent<MouseEvent>) => {
@@ -220,19 +223,20 @@ export function AssetAssembly({
           <SelectionRing radius={ringRadius} />
         </group>
       )}
+      {selected && asset.kind === "pump" && <Line points={[[0.8, 1.6, 0], [4, 3.2, 0]]} color={statusColor || colors.selected} lineWidth={0.7} transparent opacity={0.5}/>}
       {(showLabel || hovered || selected) && (
         <Html
           position={[
-            anchor[0],
-            anchor[1] + (asset.kind === "tank" ? 4.3 : 3.6),
+            anchor[0] + (asset.kind === "pump" ? 4 : 0),
+            anchor[1] + (asset.kind === "tank" ? 4.3 : asset.kind === "pump" ? 3.2 : 2.8),
             anchor[2],
           ]}
           center
           zIndexRange={[15, 0]}
           style={{ pointerEvents: "none" }}
         >
-          <div className={"asset-label " + (selected ? "is-selected" : "")}>
-            <span>{label || asset.kind}</span>
+          <div className={"asset-label " + (selected ? "is-selected" : "")} style={statusColor ? { borderColor: statusColor + "66" } : undefined}>
+            <span><i style={{ background: statusColor }}/>{label || asset.kind}</span>
             <small>{asset.id}</small>
           </div>
         </Html>
@@ -511,6 +515,7 @@ export function PumpModel({ color, fault }: { color: string; fault: boolean }) {
         material={trim}
       />
       <StatusLight position={[0.8, 1.55, 0]} color={color} />
+      {fault && <mesh position={[0.55, 0.85, 0]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.525,0.525,0.07,20]}/><meshStandardMaterial color={colors.fault} emissive={colors.fault} emissiveIntensity={0.6} metalness={0.4} roughness={0.45}/></mesh>}
       {fault && <SelectionRing radius={1.7} fault />}
     </group>
   );
@@ -572,9 +577,9 @@ export function PipelineModel({
         .map((p, i) => (
           <Cylinder
             key={i}
-            position={[p[0], 0.24, p[2]]}
+            position={[p[0], (-1.4 + p[1] - radius) / 2, p[2]]}
             radius={0.16}
-            height={0.45}
+            height={Math.max(0.1, p[1] - radius + 1.4)}
             material={dark}
           />
         ))}

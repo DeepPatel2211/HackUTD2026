@@ -1,0 +1,60 @@
+.venv\Scripts\python.exe :
+C:\Users\vaish\projects\HackUTD2026\HackUTD2026\.venv\lib\site-packages\fastapi\testclient.py:1:
+StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+At line:2 char:1
++ .venv\Scripts\python.exe -m unittest discover -s tests -v > artifacts ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\vaish\...ttpx2` instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_full_corroboration_can_reach_100_but_is_not_fixed (test_confidence.ConfidenceTests) ... ok
+test_future_readings_do_not_inflate_earlier_replay_confidence (test_confidence.ConfidenceTests) ... ok
+test_no_samples_returns_zero_not_a_default_high_score (test_confidence.ConfidenceTests) ... ok
+test_partial_corroboration_is_measured_continuously (test_confidence.ConfidenceTests) ... ok
+test_events_export_matches_the_spec_shape (test_engine.ApiTests) ... ok
+test_handoff_and_fleet_study_respond (test_engine.ApiTests) ... ok
+test_health_and_dataset_discovery (test_engine.ApiTests) ... ok
+test_investigate_without_credentials_is_explicit (test_engine.ApiTests) ... ok
+test_path_traversal_is_rejected (test_engine.ApiTests) ... ok
+test_baselines_are_learned_not_assumed (test_engine.DetectionTests) ... ok
+test_every_labelled_event_is_found_with_the_right_asset (test_engine.DetectionTests) ... ok
+test_quiet_field_raises_no_alerts (test_engine.DetectionTests) ... ok
+test_resolved_events_leave_the_alert_board (test_engine.DetectionTests) ... ok
+test_alerts_are_ordered_by_urgency_then_revenue (test_engine.PlanningTests) ... ok
+test_event_9_opening_scene_costs_one_truck_trip (test_engine.PlanningTests) ... ok
+test_fleet_is_never_oversubscribed (test_engine.PlanningTests) ... ok
+test_plan_is_cheapest_for_the_trucks_it_was_actually_granted (test_engine.PlanningTests)
+A facility may be given a dearer plan so a more urgent tank gets the truck. ... ok
+test_sharing_a_fleet_beats_planning_each_tank_alone (test_engine.PlanningTests)
+Three S2 tanks fail within an hour and only two trucks exist. ... ok
+test_snapshot_plans_beat_or_match_the_reference_cost (test_engine.PlanningTests) ... ok
+test_countdown_band_brackets_the_median (test_engine.SimulatorTests) ... ok
+test_late_truck_does_not_reverse_a_trip (test_engine.SimulatorTests) ... ok
+test_timed_shut_in_cost_and_water (test_engine.SimulatorTests) ... ok
+test_trip_between_events_accounts_for_lost_revenue (test_engine.SimulatorTests) ... ok
+test_truck_cannot_take_more_than_tank_contains (test_engine.SimulatorTests) ... ok
+test_already_tripped_tank_stays_shut_even_if_drained (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_arrival_at_or_after_repair_is_illegal (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_event_6_requires_no_action (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_max_trips_excludes_an_arrival_exactly_at_repair (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_repair_complete_and_safe_no_action (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_shut_well_status_preserves_trip_latch_despite_level_noise (test_planner_compliance.BoundaryComplianceTests) ... ok
+test_mock_inference_cannot_open_any_answer_key (test_planner_compliance.RuntimeInputComplianceTests) ... ok
+test_network_and_economics_are_not_bound_to_practice_ids (test_planner_compliance.RuntimeInputComplianceTests) ... ok
+test_dispatch_may_need_to_wait_for_a_full_load (test_planner_compliance.SharedFleetComplianceTests) ... ok
+test_final_arrivals_traces_costs_and_release_use_final_schedule (test_planner_compliance.SharedFleetComplianceTests)
+... ok
+test_gang_dispatches_cannot_double_book_trucks (test_planner_compliance.SharedFleetComplianceTests) ... ok
+test_independent_well_times_beat_common_subset_time (test_planner_compliance.SharedFleetComplianceTests) ... ok
+test_latest_start_edf_is_not_used_as_feasibility_proof (test_planner_compliance.SharedFleetComplianceTests) ... ok
+test_more_expensive_shorter_job_enables_cheaper_system_solution (test_planner_compliance.SharedFleetComplianceTests)
+... ok
+test_no_truck_is_used_twice_at_the_same_time (test_planner_compliance.SharedFleetComplianceTests) ... ok
+test_reuse_detection_does_not_mix_one_facility_response_with_another_cycle
+(test_planner_compliance.SharedFleetComplianceTests) ... ok
+
+----------------------------------------------------------------------
+Ran 40 tests in 6.304s
+
+OK

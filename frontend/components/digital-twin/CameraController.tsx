@@ -9,9 +9,11 @@ import type { CameraIntent } from "../../lib/types";
 export default function CameraController({
   intent,
   sceneRadius,
+  inspectionOpen = false,
 }: {
   intent: CameraIntent;
   sceneRadius: number;
+  inspectionOpen?: boolean;
 }) {
   const controls = useRef<CameraControls>(null);
   const { size } = useThree();
@@ -47,19 +49,24 @@ export default function CameraController({
     // Resizing the canvas may update limits, but must not undo the user's pan/orbit.
     if (initialized.current && lastNavigation.current === intent.revision) return;
     lastNavigation.current = intent.revision;
-    const offset = new Vector3(0.64, 0.58, 0.52).normalize().multiplyScalar(framing.distance);
-    // Keep an isometric approach while fitting the limiting viewport dimension.
-    void c.setLookAt(
-      x + offset.x,
-      y + offset.y,
-      z + offset.z,
-      x,
-      y,
-      z,
-      initialized.current,
-    );
+    const direction = new Vector3(0.64, 0.58, 0.52).normalize();
+    const offset = direction.clone().multiplyScalar(framing.distance);
+    const aim = new Vector3(x, y, z);
+    if (inspectionOpen) {
+      const unitsPerPixel = 2 * Math.tan(42 * Math.PI / 360) * framing.distance / Math.max(1, size.height);
+      const right = new Vector3(direction.z, 0, -direction.x).normalize();
+      if (size.width >= 700) {
+        aim.addScaledVector(right, Math.min(380, size.width * 0.42) / 2 * unitsPerPixel);
+      } else {
+        const forward = new Vector3(direction.x, 0, direction.z).normalize();
+        aim.addScaledVector(forward, Math.min(240, size.height * 0.4) / 2 * unitsPerPixel / direction.y);
+      }
+    }
+    // Optical framing accounts for the actual canvas and inspector, without changing input mapping.
+    void c.setLookAt(aim.x + offset.x, aim.y + offset.y, aim.z + offset.z,
+      aim.x, aim.y, aim.z, initialized.current);
     initialized.current = true;
-  }, [intent, framing, sceneRadius]);
+  }, [intent, framing, sceneRadius, inspectionOpen, size.width, size.height]);
   return (
     <CameraControls
       ref={controls}

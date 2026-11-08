@@ -42,11 +42,11 @@ export function buildScene(data: Dashboard): SceneGraph {
     const columns = Math.max(1, Math.ceil(Math.sqrt(facilities.length)));
     const rows = Math.ceil(facilities.length / columns);
     const cellDepth = Math.max(
-      17,
+      14,
       ...facilities.map((f) => f.wells.length * 2.8 + 5),
     );
-    const width = columns * 26 + 10;
-    const depth = rows * cellDepth + 21;
+    const width = columns * 24 + 8;
+    const depth = rows * cellDepth + 18;
     return {
       system,
       position: [0, 0, 0],
@@ -57,7 +57,7 @@ export function buildScene(data: Dashboard): SceneGraph {
       facilities: facilities.map((facility, i) => ({
         facility,
         position: [
-          ((i % columns) - (columns - 1) / 2) * 26,
+          ((i % columns) - (columns - 1) / 2) * 24,
           0,
           Math.floor(i / columns) * cellDepth -
             ((rows - 1) * cellDepth) / 2 +

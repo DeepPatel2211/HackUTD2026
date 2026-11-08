@@ -2,6 +2,7 @@
 import { AssetLabel as Html } from "./AssetLabel";
 import { useMemo } from "react";
 import Platform from "./Platform";
+import SiteDetails from "./SiteDetails";
 import type { Asset, Dashboard, Navigation, Selection } from "../../lib/types";
 import type { FacilityLayout, SceneGraph } from "../../lib/scene-layout";
 import {
@@ -41,6 +42,8 @@ export default function FacilityScene({
 }) {
   const f = layout.facility;
   const detailed = navigation.facilityId === f.id;
+  const padDepth = Math.max(9, (f.wells.length - 1) * 2.8 + 3);
+  const selectedHere = Boolean(selection && graph.assets[selection.assetId]?.facilityId === f.id);
   const incident = data.alerts.find((a) => a.facility_id === f.id);
   const asset = (id: string) => graph.assets[id];
   const state = (id: string) =>
@@ -66,6 +69,7 @@ export default function FacilityScene({
   const assemblyProps = (id: string) => ({
     asset: asset(id),
     selected: selection?.assetId === id,
+    statusColor: state(id).color,
     onSelect: interactions.onSelect,
     onFocus: interactions.onFocus,
   });
@@ -84,15 +88,16 @@ export default function FacilityScene({
   }
   return (
     <group position={layout.position}>
-      <Platform width={layout.width} depth={layout.depth} height={0.44} top={-0.01} color={detailed ? "#304654" : "#2a3f4d"}/>
-      {navigation.systemId === f.system_id && !detailed && (
+      <Platform width={21.5} depth={padDepth} height={1.4} top={-0.01} color="#35454f"/>
+      <SiteDetails width={21.5} depth={padDepth} top={-0.01}/>
+      {navigation.systemId === f.system_id && !detailed && !selection && (
         <Html
           center
-          position={[0, 0.35, layout.depth / 2 - 0.5]}
+          position={[-4.5, 3.8, -padDepth / 2 - 0.8]}
           zIndexRange={[10, 0]}
         >
           <button
-            className={"facility-tag " + (incident ? "has-incident" : "")}
+            className={"facility-tag " + (incident ? "has-incident" : "") + (selectedHere ? " is-selected" : "")}
             onClick={() =>
               interactions.onNavigate({
                 systemId: f.system_id,
@@ -181,7 +186,7 @@ export default function FacilityScene({
         {...assemblyProps(f.pump.id)}
         position={[4.5, 0, 0]}
         ringRadius={1.8}
-        label="PUMP"
+        label={f.pump.id.replace(/^.*_PUMP_/, "Pump ")}
       >
         <PumpModel
           color={state(f.pump.id).color}

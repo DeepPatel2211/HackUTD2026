@@ -11,8 +11,8 @@ earn nothing until the repair finishes. The operator has three levers:
 
 Everything here is a deterministic simulation of the tank, so a plan is never
 "recommended" on a rule of thumb: it is recommended because we replayed it and
-watched the level stay under the limit, and because every cheaper plan we
-replayed did not.
+checked its final scheduled actions. Optimality is limited to the explicit
+truck-group/constant-inflow model, not unrestricted field operations.
 
 The subtle part is that a system's trucks are shared. When two or three pumps in
 one system fail within a few hours, a truck sent to one tank cannot help another,
@@ -23,10 +23,10 @@ from __future__ import annotations
 import math
 from statistics import mean as _mean, pstdev
 
+from .scheduling import solve
+
 # Standard normal deviate for a 10%/90% interval, used for the countdown range.
 Z80 = 1.2816
-# Bisection steps when searching for the latest moment an action still works.
-BISECT_STEPS = 34
 
 
 # --------------------------------------------------------------------------
@@ -34,14 +34,14 @@ BISECT_STEPS = 34
 # --------------------------------------------------------------------------
 
 def simulate(capacity, limit, initial, horizon, water, revenue,
-             shut, shut_at, arrivals, load, trip_cost):
+             shut, shut_at, arrivals, load, trip_cost, already_tripped=False):
     """Replay one plan against the tank and return its cost, or None if illegal.
 
     Arguments are in plain units so the maths stays inspectable:
       capacity  tank size in bbl              limit     shutdown level in bbl
       initial   current volume in bbl         horizon   hours until the repair ends
       water     each well's water rate, bpd   revenue   each well's lost $/hour
-      shut      indices of wells to shut in   shut_at   hour the shut-in starts
+      shut      indices of wells to shut in   shut_at   hour, or {well index: hour}
       arrivals  hours at which truck trips land (repeated once per truck)
       load      bbl removed per trip          trip_cost $ per trip
 
@@ -54,22 +54,27 @@ def simulate(capacity, limit, initial, horizon, water, revenue,
     Returns None when the plan is physically impossible, which is how the search
     discards trips that would draw more water than the tank is holding.
     """
+    if any(not math.isfinite(t) or t < 0 or t >= horizon - 1e-9 for t in arrivals):
+        return None
+    starts = {i: (shut_at[i] if isinstance(shut_at, dict) else shut_at) for i in shut}
+    if any(not math.isfinite(t) or t < 0 or t > horizon for t in starts.values()):
+        return None
     volume = initial
     cost = len(arrivals) * trip_cost
-    tripped = initial >= limit - 1e-7
+    tripped = already_tripped or initial >= limit - 1e-7
     trace = [{'hour': 0.0, 'level_pct': 100 * volume / capacity}]
     previous = 0.0
 
     # Every moment the picture changes, in order. Anything outside the repair
     # window is irrelevant: the pump is back before it and the tank is safe after.
-    moments = sorted({0.0, horizon, shut_at} | set(arrivals))
+    moments = sorted({0.0, horizon} | set(starts.values()) | set(arrivals))
 
     for moment in moments:
         if moment < 0 or moment > horizon:
             continue
         # Wells still producing over the segment that just ended.
-        shut_now = previous >= shut_at
-        producing = [i for i in range(len(water)) if not (i in shut and shut_now)]
+        stopped = {i for i, start in starts.items() if previous >= start}
+        producing = [i for i in range(len(water)) if i not in stopped]
         inflow = 0.0 if tripped else sum(water[i] for i in producing) / 24.0  # bbl/hour
         span = moment - previous
 
@@ -77,18 +82,19 @@ def simulate(capacity, limit, initial, horizon, water, revenue,
             # Automatic shut-in: every well in the facility is earning nothing.
             cost += sum(revenue) * span
         else:
-            if shut_now:
-                cost += sum(revenue[i] for i in shut) * span
+            cost += sum(revenue[i] for i in stopped) * span
             # How long until this segment's inflow would reach the limit?
             to_limit = (limit - volume) / inflow if inflow > 0 else math.inf
             if to_limit < span - 1e-8 or (to_limit <= span + 1e-9 and moment < horizon - 1e-8):
                 # The tank trips partway through this segment.
                 cost += sum(revenue[i] for i in producing) * max(0.0, span - to_limit)
+                trace.append({'hour': round(previous + max(0.0, to_limit), 9),
+                              'level_pct': 100 * limit / capacity})
                 volume, tripped = limit, True
             else:
                 volume += inflow * span
 
-        trace.append({'hour': round(moment, 6), 'level_pct': 100 * volume / capacity})
+        trace.append({'hour': round(moment, 9), 'level_pct': 100 * volume / capacity})
 
         if moment in arrivals:
             # Trucks landing at this instant each take a full load.
@@ -96,11 +102,11 @@ def simulate(capacity, limit, initial, horizon, water, revenue,
             if removed > volume + 1e-6:
                 return None  # cannot haul water that is not in the tank
             volume -= removed
-            trace.append({'hour': round(moment, 6), 'level_pct': 100 * volume / capacity})
+            trace.append({'hour': round(moment, 9), 'level_pct': 100 * volume / capacity})
 
         previous = moment
 
-    return {'cost': round(cost, 2), 'tripped': tripped, 'trace': trace, 'verified': True}
+    return {'cost': round(cost, 2), '_exact_cost': cost, 'tripped': tripped, 'trace': trace, 'verified': True}
 
 
 # --------------------------------------------------------------------------
@@ -143,7 +149,7 @@ def hours_to_limit(level_pct, capacity, limit_pct, inflow_samples):
 class FacilityProblem:
     """Everything the planner needs about one tank that is filling up."""
 
-    def __init__(self, data, facility, level_pct, horizon_h, water, revenue):
+    def __init__(self, data, facility, level_pct, horizon_h, water, revenue, now=None):
         system = data.system_of[facility['id']]
         travel = data.ops['systems'][system['id']]['facilities'][facility['id']]
         trucking = data.ops['emergency_trucking']
@@ -162,12 +168,18 @@ class FacilityProblem:
         self.load = trucking['truck_capacity_bbl']
         self.trip_cost = trucking['cost_per_trip']
         self.fleet = data.ops['systems'][system['id']]['emergency_fleet_size']
+        self.already_tripped = self.initial >= self.limit - 1e-7 or bool(
+            now is not None and facility['wells'] and
+            all(data.value(w['id'], 'status', now, 1) == 0 for w in facility['wells']))
+        if self.capacity <= 0 or self.response_h < 0 or self.cycle_h <= 0:
+            raise ValueError('Invalid tank capacity or truck travel times')
+
 
     def run(self, shut, shut_at, arrivals):
         """Replay one specific plan on this tank."""
         return simulate(self.capacity, self.limit, self.initial, self.horizon,
                         self.water, self.revenue, shut, shut_at, arrivals,
-                        self.load, self.trip_cost)
+                        self.load, self.trip_cost, already_tripped=self.already_tripped)
 
     def arrivals(self, trucks, trips, delay=0.0):
         """When each truck trip lands, given the dispatch is called at `delay` hours.
@@ -194,244 +206,143 @@ class FacilityProblem:
     def max_trips(self, delay=0.0):
         """Most trips one truck can land inside the remaining repair window."""
         usable = self.horizon - delay - self.response_h
-        return 0 if usable <= 0 else int(usable / self.cycle_h) + 1
+        return 0 if usable <= 1e-9 else math.ceil((usable - 1e-9) / self.cycle_h)
 
 
-def _latest(problem, test, hi):
-    """Binary-search the latest moment an action can be taken and still work.
+def _baseline(problem):
+    result = problem.run([], problem.horizon, [])
+    return {**result,
+            'label': 'Accept the automatic shut-in' if result['tripped'] else 'No action needed',
+            'trucks': 0, 'trips': 0, 'delay_h': 0.0, 'latest_delay_h': 0.0,
+            'busy_h': 0.0, 'shut_wells': [], 'shut_at_h': None,
+            'actions': [{'type': 'none'}], 'baseline_cost': result['cost'], '_baseline': True}
 
-    `test(t)` must be True for small t and False for large t. Acting as late as
-    possible is always at least as cheap here -- a shut-in costs by the hour, and a
-    late truck call frees the truck for another tank in the meantime.
-    """
-    lo = 0.0
-    if not test(lo):
-        return None
-    for _ in range(BISECT_STEPS):
-        mid = (lo + hi) / 2
-        if test(mid):
-            lo = mid
-        else:
-            hi = mid
-    return lo
+
+def _materialize(problem, option, delay, shut_times):
+    """Serialize final times FIRST, then simulate exactly those public actions."""
+    if option.get('_baseline'):
+        return _baseline(problem)
+    trucks, trips = option['trucks'], option['trips']
+    delay = round(max(0.0, delay) * 60, 9) / 60
+    arrivals = problem.arrivals(trucks, trips, delay)
+    if len(arrivals) != trucks * trips:
+        raise RuntimeError('Scheduled trips do not all arrive before repair')
+    times = sorted({round(t, 9) for t in arrivals})
+    starts = {i: round(start * 60, 9) / 60 for i, start in enumerate(shut_times)
+              if start < problem.horizon - 1e-9}
+    actions = []
+    busy_until = round(delay + problem.busy_hours(trucks, trips), 9)
+    if trucks:
+        actions.append({'type': 'dispatch_truck', 'facility_id': problem.facility_id,
+                        'trucks': trucks, 'trips_per_truck': trips,
+                        'arrival_hours': times, 'busy_until_hour': busy_until})
+    grouped = {}
+    for index, start in starts.items():
+        grouped.setdefault(start, []).append(problem.facility['wells'][index]['id'])
+    for start, wells in sorted(grouped.items()):
+        actions.append({'type': 'shut_in_wells', 'wells': wells,
+                        'start_after_min': round(start * 60, 9)})
+    actual_arrivals = [t for t in times for _ in range(trucks)]
+    result = problem.run(list(starts), starts, actual_arrivals)
+    if result is None or result['tripped']:
+        raise RuntimeError('Final scheduled actions failed tank verification')
+    base = _baseline(problem)
+    parts = [f'{trucks} truck{"s" if trucks != 1 else ""}, {trips} trip{"s" if trips != 1 else ""} each'] if trucks else []
+    for start, wells in sorted(grouped.items()):
+        when = 'now' if start < 1e-6 else f'in {start * 60:.1f} min'
+        parts.append(f'shut in {", ".join(wells)} {when}')
+    return {**result, 'label': ' + '.join(parts) or 'No action needed',
+            'trucks': trucks, 'trips': trips, 'delay_h': delay,
+            'latest_delay_h': delay, 'busy_h': problem.busy_hours(trucks, trips),
+            'shut_wells': [problem.facility['wells'][i]['id'] for i in starts],
+            'shut_at_h': min(starts.values()) if starts else None,
+            'actions': actions or [{'type': 'none'}], 'baseline_cost': base['cost'],
+            '_baseline': False}
 
 
 def candidates(problem):
-    """Every distinct response worth considering for one failed pump.
+    """Keep ALL feasible truck/trip options; independent well times are optimized.
 
-    The search is exhaustive over the levers that actually move cost:
-      * how many trucks to send and how many trips each makes;
-      * which subset of wells to shut in (a facility has only a handful, so every
-        subset is evaluated -- no greedy shortcut, no missed combination);
-      * when to start the shut-in, taken as late as the tank allows, since the
-        meter only runs while the well is off;
-      * how long the truck dispatch can wait, which costs nothing here but may
-        free the truck for a sicker tank elsewhere in the system.
-
-    Returns plans sorted cheapest first. Each carries its simulated tank trace,
-    so the UI can show the operator the level staying under the limit.
+    The individual result is a lower-cost bound/preview, not a frozen schedule:
+    allocate() jointly re-solves the dispatch and every well's shut-in time.
     """
-    n = len(problem.water)
-    wells = problem.facility['wells']
-
-    # The do-nothing baseline: what the week's recording already shows happening.
-    base = problem.run([], problem.horizon, [])
-    baseline_cost = base['cost'] if base else 0.0
-    plans = [{
-        **base,
-        'label': 'Accept the automatic shut-in' if base['tripped'] else 'No action needed',
-        'trucks': 0, 'trips': 0, 'delay_h': 0.0, 'latest_delay_h': 0.0,
-        'busy_h': 0.0, 'shut_wells': [], 'shut_at_h': None,
-        'actions': [] if base['tripped'] else [{'type': 'none'}],
-        'baseline_cost': baseline_cost,
-    }]
-
-    # Nothing to plan if the tank has already tripped or the repair is done.
-    if problem.initial >= problem.limit - 1e-7 or problem.horizon <= 0:
-        return plans
-
-    for trucks in range(0, problem.fleet + 1):
-        for trips in range(1 if trucks else 0, problem.max_trips() + 1):
-            arrivals = problem.arrivals(trucks, trips)
-            if trucks and not arrivals:
-                continue
-            for mask in range(1 << n):
-                shut = [i for i in range(n) if mask & (1 << i)]
-
-                # Try the cheapest form first: trucks only, shut-in never starts.
-                result = problem.run(shut, problem.horizon, arrivals)
-                shut_at = problem.horizon
-                if shut and (result is None or result['tripped']):
-                    # Trucks alone are not enough. Find the latest the shut-in can
-                    # start and still hold the tank under the limit.
-                    def holds(t, shut=shut, arrivals=arrivals):
-                        r = problem.run(shut, t, arrivals)
-                        return r is not None and not r['tripped']
-                    shut_at = _latest(problem, holds, problem.horizon)
-                    if shut_at is None:
-                        continue
-                    result = problem.run(shut, shut_at, arrivals)
-                if result is None or result['tripped']:
-                    continue
-
-                # How long can this dispatch wait before it stops working? That
-                # slack is what lets the system-level allocator share a fleet.
-                if trucks:
-                    def ok(delay, shut=shut, shut_at=shut_at, trucks=trucks, trips=trips):
-                        later = problem.arrivals(trucks, trips, delay)
-                        if len(later) != len(arrivals):
-                            return False
-                        r = problem.run(shut, shut_at, later)
-                        return r is not None and not r['tripped']
-                    latest_delay = _latest(problem, ok, problem.horizon) or 0.0
-                else:
-                    latest_delay = 0.0
-
-                plans.append({
-                    **result,
-                    'label': _label(problem, wells, trucks, trips, shut, shut_at),
-                    'trucks': trucks, 'trips': trips,
-                    'delay_h': 0.0, 'latest_delay_h': latest_delay,
-                    'busy_h': problem.busy_hours(trucks, trips),
-                    'shut_wells': [wells[i]['id'] for i in shut],
-                    'shut_at_h': shut_at if shut and shut_at < problem.horizon - 1e-6 else None,
-                    'actions': _actions(problem, wells, trucks, trips, shut, shut_at),
-                    'baseline_cost': baseline_cost,
-                })
-
-    plans.sort(key=lambda p: p['cost'])
+    baseline = _baseline(problem)
+    if baseline['cost'] == 0 or problem.already_tripped or problem.horizon <= 0:
+        return [baseline]
+    plans = [baseline]
+    for trucks in range(problem.fleet + 1):
+        trip_counts = range(1, problem.max_trips() + 1) if trucks else [0]
+        for trips in trip_counts:
+            option = {'trucks': trucks, 'trips': trips, '_baseline': False}
+            result = solve([problem], [[option]], problem.fleet)
+            if result is not None:
+                _, delay, starts, _ = result[0]
+                plans.append(_materialize(problem, option, delay, starts))
+    plans.sort(key=lambda plan: (plan['cost'], plan['trucks'], plan['trips']))
     return plans
 
 
-def _label(problem, wells, trucks, trips, shut, shut_at):
-    """Plain English for the operator, assembled from what the plan actually does."""
-    parts = []
-    if trucks:
-        parts.append(f'{trucks} truck{"s" if trucks > 1 else ""}, '
-                     f'{trips} trip{"s" if trips > 1 else ""} each')
-    if shut and shut_at < problem.horizon - 1e-6:
-        names = ', '.join(wells[i]['id'] for i in shut)
-        when = 'now' if shut_at < 1e-6 else f'in {shut_at * 60:.0f} min'
-        parts.append(f'shut in {names} {when}')
-    return ' + '.join(parts) or 'Hold and monitor until the repair'
-
-
-def _actions(problem, wells, trucks, trips, shut, shut_at):
-    """The same plan in the machine-readable shape used by the events export."""
-    actions = []
-    if trucks:
-        actions.append({
-            'type': 'dispatch_truck', 'facility_id': problem.facility_id,
-            'trucks': trucks, 'trips_per_truck': trips,
-            'arrival_hours': sorted(set(problem.arrivals(trucks, trips))),
-            # When these trucks are back in the yard and free for another tank.
-            'busy_until_hour': round(problem.busy_hours(trucks, trips), 4),
-        })
-    if shut and shut_at < problem.horizon - 1e-6:
-        actions.append({
-            'type': 'shut_in_wells',
-            'wells': [wells[i]['id'] for i in shut],
-            'start_after_min': round(shut_at * 60, 1),
-        })
-    return actions or [{'type': 'none'}]
-
-
-# --------------------------------------------------------------------------
-# Sharing one fleet between several failing tanks
-# --------------------------------------------------------------------------
-
 def _schedulable(jobs, fleet):
-    """Can `fleet` trucks cover every dispatch in this combination of plans?
+    """Exact order search for fixed-duration jobs with latest-start deadlines.
 
-    Each job needs `trucks` vehicles for `duration` hours and must be called no
-    later than `latest`. We place the jobs earliest-deadline-first, each at the
-    first moment enough trucks are idle, and fail if that is already too late.
-    Taking the tightest deadline first is the classic scheduling order and is
-    optimal whenever each dispatch needs a single truck, which is the normal case.
-
-    Returns the call time per job, or None if the fleet cannot cover them.
+    Retained for callers checking fixed plans. EDF by latest start is NOT exact,
+    even for one truck. Joint cost/timing optimization below uses the MILP.
     """
-    free = [0.0] * fleet              # the hour each truck next becomes available
-    calls = {}
-    for key, trucks, duration, latest in sorted(jobs, key=lambda j: (j[3], j[1])):
-        if trucks > fleet:
+    failed = set()
+
+    def visit(remaining, free, calls):
+        if not remaining:
+            return calls
+        state = (remaining, tuple(sorted(free)))
+        if state in failed:
             return None
-        # Earliest instant `trucks` vehicles are simultaneously idle.
-        start = sorted(free)[trucks - 1]
-        if start > latest + 1e-9:
-            return None
-        # Commit the earliest-available trucks to this job.
-        order = sorted(range(fleet), key=lambda i: free[i])[:trucks]
-        for i in order:
-            free[i] = start + duration
-        calls[key] = start
-    return calls
+        for index in remaining:
+            key, trucks, duration, latest = jobs[index]
+            if not 0 < trucks <= fleet:
+                continue
+            order = sorted(range(fleet), key=lambda i: free[i])[:trucks]
+            start = max(free[i] for i in order)
+            if start > latest + 1e-9:
+                continue
+            after = list(free)
+            for truck in order:
+                after[truck] = start + duration
+            answer = visit(tuple(i for i in remaining if i != index), after, {**calls, key: start})
+            if answer is not None:
+                return answer
+        failed.add(state)
+        return None
+
+    return visit(tuple(range(len(jobs))), [0.0] * fleet, {})
 
 
-def allocate(problems, plan_options, fleet, keep=8):
-    """Choose one plan per failing tank so the whole system comes out cheapest.
+def allocate(problems, plan_options, fleet, keep=None):
+    """Jointly optimize every retained option, dispatch and independent well time.
 
-    A truck committed to one facility is gone from the others for hours, so
-    planning each tank in isolation over-promises: three tanks would each claim
-    the same two trucks. We instead search combinations of plans and keep the
-    cheapest one the fleet can actually execute.
-
-    To keep the search small, each facility offers only its cheapest plan per
-    (trucks used) level plus a few runners-up -- a more expensive plan that uses
-    the same number of trucks can never help another facility, so it is safe to
-    drop. With a handful of facilities per system this stays exhaustive in
-    practice while running in milliseconds.
+    `keep` is accepted for compatibility but never truncates candidates. The
+    returned trace/cost/actions are rebuilt from the FINAL shared-fleet schedule.
     """
-    shortlists = []
-    for problem in problems:
-        cheapest_by_trucks = {}
-        for plan in plan_options[problem.facility_id]:
-            current = cheapest_by_trucks.get(plan['trucks'])
-            if current is None or plan['cost'] < current['cost']:
-                cheapest_by_trucks[plan['trucks']] = plan
-        shortlist = sorted(cheapest_by_trucks.values(), key=lambda p: p['cost'])[:keep]
-        shortlists.append(shortlist)
-
-    best_total, best_combo = math.inf, None
-
-    def search(index, chosen, running_cost):
-        nonlocal best_total, best_combo
-        if running_cost >= best_total:
-            return                       # cannot beat what we already have
-        if index == len(shortlists):
-            jobs = [(problems[i].facility_id, p['trucks'], p['busy_h'], p['latest_delay_h'])
-                    for i, p in enumerate(chosen) if p['trucks']]
-            calls = _schedulable(jobs, fleet)
-            if calls is None:
-                return
-            best_total, best_combo = running_cost, [
-                {**p, 'delay_h': calls.get(problems[i].facility_id, 0.0)}
-                for i, p in enumerate(chosen)
-            ]
-            return
-        for plan in shortlists[index]:
-            search(index + 1, chosen + [plan], running_cost + plan['cost'])
-
-    search(0, [], 0.0)
-    # Every facility always has an accept-the-trip plan, so a solution always exists.
-    return best_combo or [shortlist[0] for shortlist in shortlists]
+    options = [plan_options[p.facility_id] for p in problems]
+    result = solve(problems, options, fleet)
+    if result is None:
+        raise RuntimeError('No legal shared-fleet allocation, including no-action baselines')
+    plans, intervals = [], []
+    for problem, (option, delay, starts, vehicles) in zip(problems, result):
+        plan = _materialize(problem, option, delay, starts)
+        for truck in vehicles:
+            intervals.append((truck, plan['delay_h'], plan['delay_h'] + plan['busy_h']))
+        plans.append(plan)
+    for truck in range(fleet):
+        assigned = sorted((start, end) for vehicle, start, end in intervals if vehicle == truck)
+        if any(end > following + 1e-7 for (_, end), (following, _) in zip(assigned, assigned[1:])):
+            raise RuntimeError('Final schedule double-books a truck')
+    return plans
 
 
 def reuse_possible(data) -> bool:
-    """Could a truck ever finish one job and still reach a second tank in time?
-
-    Answered from ops.json rather than assumed: a truck must drive out, work,
-    drive back, then drive out again, all inside one repair window. On the
-    practice network that is only marginally possible, but an unseen network may
-    differ, so the app reports what it found instead of claiming a blanket rule.
-    """
-    horizon = data.ops['expected_repair_hours']['pump_failure'] * 60.0
-    best = math.inf
-    for system in data.ops['systems'].values():
-        travel = list(system['facilities'].values())
-        if len(travel) < 2:
-            continue
-        responses = sorted(t['response_min'] for t in travel)
-        cycles = sorted(t['cycle_min'] for t in travel)
-        best = min(best, responses[0] + cycles[0] + responses[1])
-    return best < horizon
+    """Check real ordered facility pairs, using the FIRST facility's cycle."""
+    horizon = data.ops['expected_repair_hours']['pump_failure']
+    return any((a['response_min'] + a['cycle_min'] + b['response_min']) / 60 < horizon
+               for system in data.ops['systems'].values()
+               for aid, a in system['facilities'].items()
+               for bid, b in system['facilities'].items() if aid != bid)

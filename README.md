@@ -68,9 +68,9 @@ dragging the replay slider shows exactly what an operator would have known then.
 
 A pump failure gets a costed plan. The planner replays candidate responses against
 an event-driven tank simulation and keeps the cheapest one that never reaches the
-shutdown limit. It searches every truck count and trip count, every subset of wells
-to shut in, and the latest moment each shut-in can start — because a shut-in only
-costs money while the well is off.
+shutdown limit. It considers every feasible truck count and trip count, jointly
+choosing dispatch times and independent shut-in times for each well. A shut-in
+only costs money while the well is off.
 
 A system's trucks are shared, so concurrent failures are solved **together**: plan
 combinations are searched against a truck timeline, and a truck committed to one
@@ -131,14 +131,15 @@ server does not load `.env` automatically; `.env.example` documents the variable
 
 This is a local decision-support MVP, not a certified control system.
 
-- The planner searches simultaneous truck dispatches with equal trip counts per
-  truck and a common shut-in time per well subset. It does not search independently
-  timed shut-ins within one subset. Within a system it is exhaustive over each
-  facility's non-dominated plans; the truck scheduler places jobs
-  earliest-deadline-first, which is exact when each dispatch uses one truck.
-- The cheapest plan can graze the shutdown limit exactly as the repair completes.
-  That is genuinely optimal and genuinely zero-margin; an operator may prefer to
-  act earlier than the recommendation.
+- The planner uses one simultaneous truck group per facility with equal trip
+  counts per truck. A mixed-integer solver jointly chooses all retained truck/trip
+  options, independent well shut-in times, dispatch ordering and reusable vehicle
+  assignments. There is no cheapest-per-truck shortlist or greedy schedule. Solver
+  success is required; this is not unrestricted global field optimality.
+- Numerical clearances are 0.0036 seconds before the repair boundary and the larger
+  of 0.000001 bbl or 0.000001% of tank capacity below the shutdown limit. These are
+  numerical tolerances, not an operational safety margin. Returned actions are
+  re-simulated after the final shared-fleet schedule is assigned.
 - Simulation holds each well's currently measured water rate constant and uses the
   fixed repair duration from `ops.json`. A tank that has already tripped stays shut
   until the repair even if a truck drains it, as the rules require.

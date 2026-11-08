@@ -317,6 +317,62 @@ def _confidence(zs: list[float]) -> float:
     return min(0.999, max(0.0, _normal_cdf(-mean * math.sqrt(len(zs)))))
 
 
+def evidence_confidence(data, facility, category, onset, now, base):
+    """Evidence score from at most 12 readings available at the replay time.
+
+    Pump failure uses equally weighted status/flow/pressure agreement, not a
+    failure probability. Residual faults retain their Gaussian evidence statistic;
+    serial dependence/model assumptions mean it is not a calibrated probability.
+    Missing channels provide no corroboration. No future episode samples are used.
+    """
+    pump = facility['pump']
+    disposal = data.system_of[facility['id']]['disposal_site']['pressure_psi']
+    if category == 'pump_failure':
+        samples = data.channel(pump['id'], 'status').tail(now, 12)
+        scores = []
+        for ts, state in samples:
+            if ts < onset:
+                continue
+            flow = data.channel(pump['id'], 'flow_bpd').at(ts)
+            pressure = data.channel(pump['id'], 'discharge_psi').at(ts)
+            healthy_flow = max(1.0, pump['max_flow_bpd'] * base.flow_scale)
+            flow_drop = max(0.0, min(1.0, 1 - flow / healthy_flow)) if flow is not None else 0.0
+            pressure_drop = (max(0.0, min(1.0, 1 - (pressure - disposal) /
+                                         max(1.0, base.disch_offset)))
+                             if pressure is not None else 0.0)
+            scores.append((float(state == 2) + flow_drop + pressure_drop) / 3)
+        score = sum(scores) / len(scores) if scores else 0.0
+        method = 'Mean agreement of fault status, flow loss and discharge-pressure collapse'
+    else:
+        zs = []
+        # Restrict the status scan before reading matching channels.
+        pipeline = facility['pipeline']['id']
+        for ts, state in data.channel(pump['id'], 'status').tail(now, 12):
+            if ts < onset or state != 1:
+                continue
+            flow = data.channel(pump['id'], 'flow_bpd').at(ts)
+            metric, asset = ('pressure_psi', pipeline) if category == 'pipeline_leak' else ('discharge_psi', pump['id'])
+            pressure = data.channel(asset, metric).at(ts)
+            if flow is None or flow <= 1 or pressure is None:
+                continue
+            if category == 'pipeline_leak':
+                received = data.channel(pipeline, 'receive_flow_bpd').at(ts)
+                if received is None:
+                    continue
+                a = (received / flow - base.recv_ratio) / base.recv_sigma
+                b = (pressure - disposal - base.pipe_offset) / base.pipe_sigma
+            else:
+                a = (flow / pump['max_flow_bpd'] - base.flow_scale) / base.flow_sigma
+                b = (pressure - disposal - base.disch_offset) / base.disch_sigma
+            zs.append(_fuse(a, b))
+        scores = zs
+        score = _confidence(zs)
+        method = 'One-sided Gaussian residual evidence from flow and pressure'
+    return {'confidence': round(score, 6),
+            'confidence_basis': {'method': method, 'samples': len(scores),
+                                 'window_readings': 12, 'calibrated_probability': False}}
+
+
 # --------------------------------------------------------------------------
 # The three detectors
 # --------------------------------------------------------------------------
@@ -424,7 +480,8 @@ def detect_all(data: Dataset) -> list[Event]:
                 facility_id=facility_id, system_id=system['id'], asset_id=pump,
                 category='pump_failure', onset_unix=ep['onset_unix'],
                 alarm_unix=ep['alarm_unix'], end_unix=ep['end_unix'],
-                confidence=0.99, peak_sigma=0.0,
+                confidence=evidence_confidence(data, facility, 'pump_failure', ep['onset_unix'],
+                                               ep['onset_unix'], base)['confidence'], peak_sigma=0.0,
                 evidence=[
                     'Pump reports a fault and is moving no water.',
                     f'Discharge pressure has fallen to the bare disposal pressure '

@@ -26,6 +26,7 @@ import { humanize } from "../lib/operational-status";
 import TopBar from "../components/control-room/TopBar";
 import IncidentRail from "../components/control-room/IncidentRail";
 import AssetInspector from "../components/control-room/AssetInspector";
+import ShiftHandoff from "../components/control-room/ShiftHandoff";
 import ReplayTimeline from "../components/control-room/ReplayTimeline";
 
 const DigitalTwinScene = dynamic(
@@ -232,20 +233,19 @@ export default function ControlRoom() {
             : true,
       )
     : [];
-  // Compact asset context keeps its system in view; full details use the original focus intent.
+  // Summary inspection focuses the real selected asset, with surrounding process context.
   const compactContext = Boolean(selectedAsset && inspectorDetailId !== selectedAsset.id);
+  const compactAssetFocus = Boolean(compactContext && selectedAsset && (navigation.facilityId || intent.radius <= selectedAsset.radius * 1.1));
   const presentationNavigation: Navigation = compactContext && selectedAsset ? { systemId: selectedAsset.systemId } : navigation;
-  const systemContextFrame = graph && presentationNavigation.systemId && !presentationNavigation.facilityId
+  const systemContextFrame = graph && !selectedAsset && presentationNavigation.systemId && !presentationNavigation.facilityId
     ? navigationFrame(graph, presentationNavigation) : null;
-  const presentationIntent: CameraIntent = systemContextFrame
-    ? {
-        // Balance the perspective-heavy front corner within the open canvas.
-        target: [systemContextFrame.target[0] + systemContextFrame.radius * 0.26,
-          systemContextFrame.target[1], systemContextFrame.target[2] + systemContextFrame.radius * 0.21],
-        radius: systemContextFrame.radius * 1.15,
-        revision: intent.revision * 2,
-      }
-    : { ...intent, radius: !navigation.systemId ? intent.radius * 1.1 : intent.radius, revision: intent.revision * 2 + 1 };
+  const presentationIntent: CameraIntent = compactAssetFocus && selectedAsset
+    ? { target: selectedAsset.position, radius: Math.max(11, selectedAsset.radius * 2.8), revision: intent.revision * 3 }
+    : systemContextFrame
+      ? { target: [systemContextFrame.target[0] + systemContextFrame.radius * 0.13,
+            systemContextFrame.target[1], systemContextFrame.target[2] + systemContextFrame.radius * 0.1],
+          radius: systemContextFrame.radius * 0.9, revision: intent.revision * 3 + 1 }
+      : { ...intent, radius: !navigation.systemId ? intent.radius * 1.1 : intent.radius, revision: intent.revision * 3 + 2 };
   return (
     <main className={"control-room " + (selectedAsset ? "inspector-open" : "")}>
       <div className="scene-stage">
@@ -257,6 +257,7 @@ export default function ControlRoom() {
             selection={selection}
             intent={presentationIntent}
             interactions={interactions}
+            inspectorOpen={Boolean(selectedAsset)}
           />
         ) : (
           <div className="scene-placeholder">
@@ -330,6 +331,7 @@ export default function ControlRoom() {
             </h2>
             <p>{presentationNavigation.facilityId ? "Wells → tank → pump → pipeline → disposal" : `${presentationNavigation.systemId ? scopeFacilities.length : data.facilities.length} facilities · ${presentationNavigation.systemId ? `${data.alerts.filter(a => a.system_id === presentationNavigation.systemId).length} active incidents · dedicated disposal site` : `${data.systems.length} connected systems`}`}</p>
           </div>
+          <div className="handoff-anchor"><ShiftHandoff dataset={dataset} at={data.now} /></div>
           <details className="scene-navigator"><summary><Layers3 size={15}/>Explore equipment</summary><div className="scene-picker-content">
             <Layers3 size={14} />
             {navigation.systemId && (
@@ -396,33 +398,12 @@ export default function ControlRoom() {
               onSelect={select}
             />
           )}
-          <div className="scene-legend glass">
-            <span>
-              <i className="status-dot healthy" />
-              Healthy
-            </span>
-            <span>
-              <i className="status-dot idle" />
-              Normal stop
-            </span>
-            <span>
-              <i className="status-dot warning" />
-              Warning
-            </span>
-            <span>
-              <i className="status-dot fault" />
-              Fault
-            </span>
-            <span>
-              <i className="selection-swatch" />
-              Selected
-            </span>
-          </div>
           <div className="scene-tools">
             {selectedAsset && (
               <button
                 className="tool-button glass"
                 onClick={() => { setInspectorDetailId(selectedAsset.id); focus(selectedAsset); }}
+                disabled={busy}
                 title="Focus selected equipment"
               >
                 <Crosshair size={16} />
@@ -471,6 +452,28 @@ export default function ControlRoom() {
                 <dt>Focus</dt>
                 <dd>Double-click / Focus button</dd>
               </dl>
+          <div className="help-status-key">
+            <span>
+              <i className="status-dot healthy" />
+              Healthy
+            </span>
+            <span>
+              <i className="status-dot idle" />
+              Normal stop
+            </span>
+            <span>
+              <i className="status-dot warning" />
+              Warning
+            </span>
+            <span>
+              <i className="status-dot fault" />
+              Fault
+            </span>
+            <span>
+              <i className="selection-swatch" />
+              Selected
+            </span>
+          </div>
               <p>
                 Use the header selector and Back to move through the network. Equipment is
                 laid out schematically. Recorded data and recommendations are for decision support and simulation; controls do not command equipment.
