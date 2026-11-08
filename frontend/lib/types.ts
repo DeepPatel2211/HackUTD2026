@@ -99,3 +99,16 @@ export type Investigation = {
   tools_executed: string[];
   model: string;
 };
+
+/** One agent's answer, streamed from /api/agents. */
+export type AgentMessage = {
+  tier: "component" | "facility" | "system" | "done" | "error";
+  text?: string;
+  verified?: boolean;
+  error?: string;
+  asset_id?: string;
+  kind?: string;
+  facility_id?: string;
+  system_id?: string;
+  payload?: Record<string, unknown>;
+};

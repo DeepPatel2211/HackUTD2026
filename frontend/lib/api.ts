@@ -20,6 +20,30 @@ function query(dataset: string, at?: number | null) {
   if (at != null) params.set("at", String(at));
   return params;
 }
+/** Where to reach /api/agents.
+ *
+ * The Next rewrite proxy buffers server-sent events: every frame of the agent
+ * stream arrives together at the end instead of as each agent answers, which
+ * throws away the progressive fill the panel is built around. Going straight to
+ * the backend keeps the stream live. The proxy path is kept as a fallback so a
+ * backend on another host still works, just buffered.
+ */
+const AGENT_ORIGIN = process.env.NEXT_PUBLIC_AGENT_ORIGIN ?? "http://127.0.0.1:8000";
+
+export function agentStreamUrls(
+  dataset: string,
+  facilityId: string,
+  at: number,
+): string[] {
+  const params = new URLSearchParams({
+    dataset,
+    facility_id: facilityId,
+    at: String(at),
+  });
+  const relative = `/api/agents?${params}`;
+  return AGENT_ORIGIN ? [`${AGENT_ORIGIN}${relative}`, relative] : [relative];
+}
+
 export const api = {
   handoff: (dataset: string, at: number, signal?: AbortSignal) =>
     request<{ now: number; summary: string[]; planned_cost: number; avoided_cost: number; scope: string }>(

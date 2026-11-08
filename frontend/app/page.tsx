@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   MousePointer2,
   RotateCcw,
+  UserRound,
   X,
 } from "lucide-react";
 import type {
@@ -28,6 +29,8 @@ import IncidentRail from "../components/control-room/IncidentRail";
 import AssetInspector from "../components/control-room/AssetInspector";
 import ShiftHandoff from "../components/control-room/ShiftHandoff";
 import ReplayTimeline from "../components/control-room/ReplayTimeline";
+import OperatorAssignment from "../components/control-room/OperatorAssignment";
+import { defaultAssignments, operatorById, roster } from "../lib/operators";
 
 const DigitalTwinScene = dynamic(
   () => import("../components/digital-twin/DigitalTwinScene"),
@@ -58,6 +61,8 @@ export default function ControlRoom() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [retry, setRetry] = useState(0);
+  const [operatorsOpen, setOperatorsOpen] = useState(false);
+  const [assignments, setAssignments] = useState<Record<string, number>>({});
   const [railOpen, setRailOpen] = useState(false),
     [helpOpen, setHelpOpen] = useState(false);
   const [inspectorDetailId, setInspectorDetailId] = useState<string | null>(null);
@@ -69,6 +74,12 @@ export default function ControlRoom() {
     playing.current = value;
   }, []);
   const graph = useMemo(() => (data ? buildScene(data) : null), [data]);
+  const systemIds = useMemo(() => (data ? data.systems.map((s) => s.id) : []), [data]);
+  const people = useMemo(() => roster(systemIds), [systemIds]);
+  // A new dataset brings new systems, so the default pairing is rebuilt.
+  useEffect(() => {
+    if (systemIds.length) setAssignments(defaultAssignments(systemIds));
+  }, [systemIds]);
   const selectedAsset =
     selection && graph ? graph.assets[selection.assetId] : undefined;
   useEffect(() => {
@@ -419,6 +430,15 @@ export default function ControlRoom() {
               <span>Reset view</span>
             </button>
             <button
+              className={"tool-button glass " + (operatorsOpen ? "active" : "")}
+              aria-expanded={operatorsOpen}
+              onClick={() => setOperatorsOpen((v) => !v)}
+              title="Operator assignments"
+            >
+              <UserRound size={16} />
+              <span>Operators</span>
+            </button>
+            <button
               className={"tool-button glass " + (helpOpen ? "active" : "")}
               aria-expanded={helpOpen}
               onClick={() => setHelpOpen((v) => !v)}
@@ -479,6 +499,17 @@ export default function ControlRoom() {
                 laid out schematically. Recorded data and recommendations are for decision support and simulation; controls do not command equipment.
               </p>
             </div>
+          )}
+          {operatorsOpen && (
+            <OperatorAssignment
+              data={data}
+              people={people}
+              assignments={assignments}
+              onAssign={(systemId, operatorId) =>
+                setAssignments((all) => ({ ...all, [systemId]: operatorId }))
+              }
+              onClose={() => setOperatorsOpen(false)}
+            />
           )}
           <ReplayTimeline
             key={dataset}
