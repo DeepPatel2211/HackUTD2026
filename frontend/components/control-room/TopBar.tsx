@@ -1,9 +1,6 @@
 import {
   ArrowLeft,
-  ChevronRight,
-  Crosshair,
   Download,
-  Layers3,
   RotateCcw,
   Waves,
 } from "lucide-react";
@@ -46,14 +43,14 @@ export default function TopBar({
     window.setTimeout(() => setNotice(""), 4000);
   }
   return (
-    <header className="topbar glass">
-      <button type="button" onClick={() => onNavigate({})} className="brand" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }}>
+    <header className="topbar glass" data-view={navigation.facilityId ? 'facility' : navigation.systemId ? 'system' : 'network'}>
+      <button type="button" onClick={() => onNavigate({})} className="brand" title="Return to all systems" style={{ background: "none", border: 0, padding: 0, textAlign: "left" }}>
         <span className="brand-symbol">
           <Waves size={22} />
         </span>
         <span>
           NIGHTSHIFT <em>AI</em>
-          <small>OPERATIONS DIGITAL TWIN</small>
+          <small>OILFIELD DIGITAL TWIN</small>
         </span>
       </button>
       <span className="toolbar-divider" />
@@ -62,15 +59,21 @@ export default function TopBar({
         <select
           value={dataset}
           aria-label="Select telemetry dataset"
+          title={dataset}
           onChange={(e) => onDataset(e.target.value)}
           disabled={!datasets.length}
         >
           {!datasets.length && <option>Connecting…</option>}
           {datasets.map((d) => (
             <option value={d} key={d}>
-              {d.replace("history/", "")}
+              {d.replace("history/", "").replace("snapshot_", "Snapshot · ").replace("mock_test_", "Mock · ").replace("full_week", "Full week recording").replace("T", " / ")}
             </option>
           ))}
+        </select>
+      </label>
+      <label className="system-control"><span className="technical-label">VIEW</span>
+        <select aria-label="Navigate to system" value={navigation.systemId || ''} disabled={!data} onChange={e => onNavigate(e.target.value ? { systemId: e.target.value } : {})}>
+          <option value="">All systems</option>{data?.systems.map(system => <option key={system.id} value={system.id}>System {system.id}</option>)}
         </select>
       </label>
       <div className="replay-status">
@@ -81,6 +84,7 @@ export default function TopBar({
         <time>{data ? timestamp(data.now) : "Awaiting dataset"}</time>
       </div>
       <div className="toolbar-actions">
+        <button className="icon-button" onClick={onBack} disabled={!navigation.systemId} title="Back one navigation level" aria-label="Back one navigation level"><ArrowLeft size={17}/></button>
         {data && (
           <button
             className="icon-button export-button"
@@ -101,49 +105,7 @@ export default function TopBar({
           <RotateCcw size={16} />
         </button>
       </div>
-      <nav className="breadcrumbs" aria-label="Spatial navigation">
-        <button
-          className="back-button"
-          onClick={onBack}
-          disabled={!navigation.systemId}
-          aria-label="Back one navigation level"
-        >
-          <ArrowLeft size={14} />
-        </button>
-        <button onClick={() => onNavigate({})}>
-          <Layers3 size={13} /> All systems
-        </button>
-        {navigation.systemId && (
-          <>
-            <ChevronRight size={12} />
-            <button
-              onClick={() => onNavigate({ systemId: navigation.systemId })}
-            >
-              System {navigation.systemId}
-            </button>
-          </>
-        )}
-        {navigation.facilityId && (
-          <>
-            <ChevronRight size={12} />
-            <span>
-              {navigation.facilityId.replace(
-                `${navigation.systemId}_FACILITY_`,
-                "Facility ",
-              )}
-            </span>
-          </>
-        )}
-        <span className="view-level">
-          <Crosshair size={11} />
-          {navigation.facilityId
-            ? "FACILITY DETAIL"
-            : navigation.systemId
-              ? "SYSTEM OVERVIEW"
-              : "NETWORK OVERVIEW"}
-        </span>
-      </nav>
-      {notice && <div role="status" style={{ position: "absolute", right: 0, top: "calc(100% + 60px)", padding: "12px 16px", border: "1px solid #385969", borderRadius: 6, background: "#102330", color: "#b7dce6", fontSize: 11, maxWidth: 320 }}>{notice}</div>}
+      {notice && <div role="status" className="toolbar-notice">{notice}</div>}
     </header>
   );
 }

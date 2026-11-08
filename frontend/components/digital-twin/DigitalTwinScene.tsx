@@ -1,7 +1,7 @@
 "use client";
-import { Component, useEffect, useRef, useState } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
-import { Environment, Grid, Lightformer } from "@react-three/drei";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { AdaptiveDpr, Environment, Lightformer } from "@react-three/drei";
 import * as THREE from "three";
 import type {
   CameraIntent,
@@ -14,6 +14,7 @@ import type { SceneInteractions } from "./FacilityScene";
 import CameraController from "./CameraController";
 import { LabelPortal } from "./AssetLabel";
 import SystemScene from "./SystemScene";
+import GroundPlane from "./GroundPlane";
 
 function Unavailable({ message }: { message?: string }) {
   return (
@@ -50,11 +51,23 @@ function ContextMonitor({
   topology: string;
 }) {
   const gl = useThree((s) => s.gl);
+  const invalidate = useThree((s) => s.invalidate);
+  const warmupFrames = useRef(3);
+  useFrame(() => {
+    if (warmupFrames.current > 0) {
+      gl.shadowMap.needsUpdate = true;
+      warmupFrames.current--;
+      invalidate();
+    }
+  });
   useEffect(() => {
     // Equipment is stationary: reuse its shadow map while flow markers animate.
     gl.shadowMap.autoUpdate = false;
+    // Environment capture can consume the first invalidation: warm the main scene too.
+    warmupFrames.current = 3;
     gl.shadowMap.needsUpdate = true;
-  }, [gl, topology]);
+    invalidate();
+  }, [gl, topology, invalidate]);
   useEffect(() => {
     const lost = (event: Event) => {
       event.preventDefault();
@@ -68,6 +81,53 @@ function ContextMonitor({
       gl.domElement.removeEventListener("webglcontextrestored", restored);
     };
   }, [gl, onLost]);
+  return null;
+}
+
+/** Move the key and its shadow frustum with the visible system, not the whole field. */
+function SceneLighting({ graph, navigation }: { graph: SceneGraph; navigation: Navigation }) {
+  const system = graph.systems.find(s => s.system.id === navigation.systemId);
+  const [x, , z] = system?.position || graph.center;
+  const extent = system ? Math.max(system.width, system.depth) * 0.78 : graph.radius * 1.5;
+  const target = useMemo(() => {
+    const object = new THREE.Object3D();
+    object.position.set(x, 0, z);
+    return object;
+  }, [x, z]);
+  return <>
+    <primitive object={target}/>
+    <ambientLight intensity={0.25}/>
+    <hemisphereLight args={["#bfd4e0", "#263746", 0.5]}/>
+    <directionalLight key={system?.system.id || "network"} target={target}
+      position={[x + 42, 64, z + 24]} intensity={2.4} color="#fff1d9" castShadow
+      shadow-mapSize={system ? [2048, 2048] : [1024, 1024]}
+      shadow-camera-left={-extent} shadow-camera-right={extent}
+      shadow-camera-top={extent} shadow-camera-bottom={-extent}
+      shadow-camera-near={1} shadow-camera-far={700}
+      shadow-bias={-0.00015} shadow-normalBias={0.025} shadow-radius={3}/>
+    <directionalLight target={target} position={[x - 40, 22, z + 35]} intensity={0.7} color="#b5d8ef"/>
+    <directionalLight target={target} position={[x + 12, 35, z - 35]} intensity={0.8} color="#c7e1e9"/>
+    <Environment resolution={64} frames={1}>
+      <Lightformer form="rect" intensity={1.5} position={[0, 20, 0]} scale={[30, 22, 1]}
+        rotation={[Math.PI / 2, 0, 0]} color="#e3edf2"/>
+      <Lightformer form="rect" intensity={2.4} position={[8, 10, 18]} scale={[9, 20, 1]}
+        rotation={[0, Math.PI, 0]} color="#c2dce9"/>
+      <Lightformer form="rect" intensity={1.2} position={[-18, 7, 0]} scale={[8, 16, 1]}
+        rotation={[0, Math.PI / 2, 0]} color="#ffe8c9"/>
+    </Environment>
+  </>;
+}
+
+function AnimationTicker({ active }: { active: boolean }) {
+  const invalidate = useThree(state => state.invalidate);
+  useEffect(() => {
+    if (!active) return;
+    // Camera controls request their own frames; ambient animations need only 30fps.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") invalidate();
+    }, 1000 / 30);
+    return () => window.clearInterval(timer);
+  }, [active, invalidate]);
   return null;
 }
 
@@ -101,8 +161,10 @@ export default function DigitalTwinScene({
         aria-label="Interactive oilfield digital twin. Drag to orbit, scroll to zoom, right-drag to pan."
       >
         <Canvas
+          frameloop="demand"
           shadows="percentage"
-          dpr={[1, 1.5]}
+          dpr={[1, 1.25]}
+          performance={{ min: 0.7, max: 1, debounce: 250 }}
           camera={{
             position: [110, 130, 110],
             fov: 42,
@@ -114,71 +176,19 @@ export default function DigitalTwinScene({
             alpha: false,
             powerPreference: "high-performance",
             toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 1.18,
           }}
           fallback={<Unavailable />}
         >
           <LabelPortal.Provider value={labelPortal}>
-            <color attach="background" args={["#080d14"]} />
+            <color attach="background" args={["#111f2b"]} />
             <fog
               attach="fog"
-              args={["#080d14", graph.radius * 3, graph.radius * 8]}
+              args={["#111f2b", graph.radius * 5, graph.radius * 12]}
             />
-            <ambientLight intensity={0.6} />
-            <hemisphereLight args={["#a7c7da", "#172329", 1.1]} />
-            <directionalLight
-              position={[30, 70, 35]}
-              intensity={2.8}
-              color="#dbe7ed"
-              castShadow
-              shadow-mapSize={[2048, 2048]}
-              shadow-camera-left={-graph.radius}
-              shadow-camera-right={graph.radius}
-              shadow-camera-top={graph.radius}
-              shadow-camera-bottom={-graph.radius}
-              shadow-camera-far={700}
-              shadow-normalBias={0.08}
-            />
-            <directionalLight
-              position={[-50, 25, -30]}
-              intensity={1.7}
-              color="#5f96b6"
-            />
-            <Environment resolution={64} frames={1}>
-              <Lightformer
-                form="rect"
-                intensity={2.2}
-                position={[0, 20, 0]}
-                scale={[40, 40, 1]}
-                rotation={[Math.PI / 2, 0, 0]}
-                color="#d1e5ef"
-              />
-              <Lightformer
-                form="rect"
-                intensity={1.2}
-                position={[-20, 5, 0]}
-                scale={[10, 30, 1]}
-                rotation={[0, Math.PI / 2, 0]}
-                color="#75a9bc"
-              />
-            </Environment>
-            <Grid
-              position={[0, -0.3, 0]}
-              args={[graph.radius * 5, graph.radius * 5]}
-              cellSize={4}
-              sectionSize={20}
-              cellColor="#1a2b39"
-              sectionColor="#263d4c"
-              cellThickness={0.45}
-              sectionThickness={0.65}
-              fadeDistance={graph.radius * 5}
-              fadeStrength={1.3}
-              infiniteGrid
-            />
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.32, 0]}>
-              <planeGeometry args={[graph.radius * 12, graph.radius * 12]} />
-              <meshBasicMaterial color="#080d14" />
-            </mesh>
-            {graph.systems.map((system) => (
+            <SceneLighting graph={graph} navigation={navigation}/>
+            <GroundPlane size={graph.radius * 12}/>
+            {graph.systems.filter(system => !navigation.systemId || system.system.id === navigation.systemId).map((system) => (
               <SystemScene
                 key={system.system.id}
                 layout={system}
@@ -190,9 +200,11 @@ export default function DigitalTwinScene({
               />
             ))}
             <CameraController intent={intent} sceneRadius={graph.radius} />
+            <AdaptiveDpr/>
+            <AnimationTicker active={data.facilities.some(f => f.pump_status === 1 || f.category === "pump_failure")}/>
             <ContextMonitor
               onLost={setContextLost}
-              topology={graph.systems
+              topology={"studio-rig-2:" + data.start + ":" + data.end + ":" + (navigation.systemId || "all") + ":" + (navigation.facilityId || "all") + ":" + graph.systems
                 .map(
                   (s) =>
                     `${s.system.id}:${s.facilities.map((f) => `${f.facility.id}:${f.facility.wells.length}`).join(",")}`,

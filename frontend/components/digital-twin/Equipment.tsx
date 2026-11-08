@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssetLabel as Html } from "./AssetLabel";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
@@ -8,22 +8,22 @@ import type { Asset, Selection, Vec3 } from "../../lib/types";
 import { colors, metricInfo } from "../../lib/operational-status";
 
 const steel = new THREE.MeshStandardMaterial({
-  color: "#607887",
-  metalness: 0.72,
-  roughness: 0.4,
+  color: "#a4b6bf",
+  metalness: 0.62,
+  roughness: 0.38,
 });
 const trim = new THREE.MeshStandardMaterial({
-  color: "#9aabb4",
+  color: "#b9c6cc",
   metalness: 0.8,
   roughness: 0.32,
 });
 const dark = new THREE.MeshStandardMaterial({
-  color: "#263c49",
+  color: "#586c79",
   metalness: 0.6,
   roughness: 0.48,
 });
 const concrete = new THREE.MeshStandardMaterial({
-  color: "#27353e",
+  color: "#343e45",
   roughness: 0.96,
 });
 const rubber = new THREE.MeshStandardMaterial({
@@ -31,10 +31,15 @@ const rubber = new THREE.MeshStandardMaterial({
   roughness: 0.85,
 });
 const teal = new THREE.MeshStandardMaterial({
-  color: "#3e7e87",
+  color: "#94abb4",
+  emissive: "#66c7c9",
+  emissiveIntensity: 0.035,
   metalness: 0.55,
   roughness: 0.45,
 });
+const faultHousing = new THREE.MeshStandardMaterial({ color: '#657987', metalness: 0.65, roughness: 0.4, emissive: colors.fault, emissiveIntensity: 0.13 });
+const warningHousing = new THREE.MeshStandardMaterial({ color: '#657987', metalness: 0.65, roughness: 0.4, emissive: colors.warning, emissiveIntensity: 0.1 });
+const brass = new THREE.MeshStandardMaterial({ color: '#bca46c', metalness: .65, roughness: .4 });
 
 export function Box({
   position = [0, 0, 0],
@@ -136,12 +141,21 @@ export function SelectionRing({
   fault?: boolean;
 }) {
   const mesh = useRef<THREE.Mesh>(null);
+  const reducedMotion = useRef(false);
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => { reducedMotion.current = preference.matches; };
+    update();
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
   useFrame(({ clock }) => {
     if (mesh.current && fault) {
-      const pulse = 1 + Math.sin(clock.elapsedTime * 2) * 0.035;
+      const wave = reducedMotion.current ? 0 : Math.sin(clock.elapsedTime * 2);
+      const pulse = 1 + wave * 0.035;
       mesh.current.scale.setScalar(pulse);
       (mesh.current.material as THREE.MeshBasicMaterial).opacity =
-        0.45 + Math.sin(clock.elapsedTime * 2) * 0.15;
+        0.45 + wave * 0.15;
     }
   });
   return (
@@ -210,7 +224,7 @@ export function AssetAssembly({
         <Html
           position={[
             anchor[0],
-            anchor[1] + (asset.kind === "tank" ? 4.3 : 2.8),
+            anchor[1] + (asset.kind === "tank" ? 4.3 : 3.6),
             anchor[2],
           ]}
           center
@@ -261,8 +275,7 @@ export function SensorMarker({
             onSelect({ assetId, metric });
           }}
         >
-          <span />
-          {metricInfo[metric]?.label || metric}
+          <span className="sensor-symbol"/><span className="sensor-caption">{metricInfo[metric]?.label || metric}</span>
         </button>
       </Html>
     </group>
@@ -358,6 +371,8 @@ export function TankModel({
         height={0.15}
         material={trim}
       />
+      <Torus position={[0, 3.88, 0]} radius={1.69} tube={.025} material={brass}/>
+      {[0,Math.PI/2,Math.PI,Math.PI*1.5].map(angle=><Cylinder key={`rail-${angle}`} position={[Math.sin(angle)*1.69,3.67,Math.cos(angle)*1.69]} radius={.022} height={.42} material={brass}/>)}
       {[0.25, 1.35, 2.45, 3.4].map((y) => (
         <Torus key={y} position={[0, y, 0]} radius={1.66} tube={0.025} />
       ))}
@@ -440,6 +455,7 @@ export function TankModel({
 }
 
 export function PumpModel({ color, fault }: { color: string; fault: boolean }) {
+  const housing = fault ? faultHousing : color === colors.warning ? warningHousing : dark;
   return (
     <group>
       <Box position={[0, 0.15, 0]} size={[3, 0.3, 1.65]} material={dark} />
@@ -456,12 +472,13 @@ export function PumpModel({ color, fault }: { color: string; fault: boolean }) {
         radius={0.48}
         height={1.35}
         rotation={[0, 0, Math.PI / 2]}
-        material={dark}
+        material={housing}
       />
       {Array.from({ length: 7 }, (_, i) => (
         <Cylinder
           key={i}
           position={[0.02 + i * 0.16, 0.85, 0]}
+          material={housing}
           radius={0.51}
           height={0.035}
           rotation={[0, 0, Math.PI / 2]}
@@ -510,20 +527,27 @@ export function PipelineModel({
   fault?: boolean;
   radius?: number;
 }) {
-  const curve = useMemo(
-    () =>
-      new THREE.CatmullRomCurve3(
-        points.map((p) => new THREE.Vector3(...p)),
-        false,
-        "centripetal",
-      ),
-    [points],
-  );
+  const curve = useMemo(() => {
+    const vertices = points.map(p => new THREE.Vector3(...p)).filter((p,i,all) => i===0 || p.distanceToSquared(all[i-1])>1e-8);
+    const path = new THREE.CurvePath<THREE.Vector3>();
+    let previous = vertices[0];
+    for(let i=1;i<vertices.length-1;i++) {
+      const corner = vertices[i];
+      const bend = Math.min(.65,corner.distanceTo(vertices[i-1])*.25,corner.distanceTo(vertices[i+1])*.25);
+      const entry = corner.clone().add(vertices[i-1].clone().sub(corner).normalize().multiplyScalar(bend));
+      const exit = corner.clone().add(vertices[i+1].clone().sub(corner).normalize().multiplyScalar(bend));
+      path.add(new THREE.LineCurve3(previous,entry));
+      path.add(new THREE.QuadraticBezierCurve3(entry,corner,exit));
+      previous = exit;
+    }
+    path.add(new THREE.LineCurve3(previous,vertices[vertices.length-1]));
+    return path;
+  },[points]);
   const geometry = useMemo(
     () =>
       new THREE.TubeGeometry(
         curve,
-        Math.max(20, points.length * 8),
+        Math.max(24, points.length * 12),
         radius,
         8,
         false,
@@ -535,11 +559,11 @@ export function PipelineModel({
       <mesh geometry={geometry} material={fault ? undefined : teal} castShadow>
         {fault && (
           <meshStandardMaterial
-            color="#95616a"
+            color="#6e494e"
             metalness={0.6}
             roughness={0.45}
             emissive={colors.fault}
-            emissiveIntensity={0.16}
+            emissiveIntensity={0.22}
           />
         )}
       </mesh>
@@ -557,7 +581,7 @@ export function PipelineModel({
       {active && (
         <FlowAnimation
           curve={curve}
-          color={fault ? colors.warning : "#81c8cb"}
+          color={fault ? colors.warning : colors.selected}
         />
       )}
     </group>
@@ -572,16 +596,21 @@ function FlowAnimation({
   color: string;
 }) {
   const group = useRef<THREE.Group>(null);
-  const point = useMemo(() => new THREE.Vector3(), []);
-  const tangent = useMemo(() => new THREE.Vector3(), []);
-  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const samples = useMemo(() => {
+    const up = new THREE.Vector3(0, 1, 0);
+    return Array.from({ length: 129 }, (_, i) => ({
+      position: curve.getPointAt(i / 128),
+      rotation: new THREE.Quaternion().setFromUnitVectors(up, curve.getTangentAt(i / 128).normalize()),
+    }));
+  }, [curve]);
   useFrame(({ clock }) => {
     group.current?.children.forEach((child, i) => {
       const t = (clock.elapsedTime * 0.08 + i / 3) % 1;
-      curve.getPointAt(t, point);
-      curve.getTangentAt(t, tangent);
-      child.position.copy(point);
-      child.quaternion.setFromUnitVectors(up, tangent.normalize());
+      const sample = t * 128;
+      const index = Math.min(127, Math.floor(sample));
+      const alpha = sample - index;
+      child.position.lerpVectors(samples[index].position, samples[index + 1].position, alpha);
+      child.quaternion.slerpQuaternions(samples[index].rotation, samples[index + 1].rotation, alpha);
     });
   });
   return (

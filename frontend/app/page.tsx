@@ -3,7 +3,6 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  ArrowUpRight,
   Box,
   Crosshair,
   HelpCircle,
@@ -28,6 +27,7 @@ import TopBar from "../components/control-room/TopBar";
 import IncidentRail from "../components/control-room/IncidentRail";
 import AssetInspector from "../components/control-room/AssetInspector";
 import ReplayTimeline from "../components/control-room/ReplayTimeline";
+import NetworkContext from "../components/control-room/NetworkContext";
 
 const DigitalTwinScene = dynamic(
   () => import("../components/digital-twin/DigitalTwinScene"),
@@ -299,6 +299,7 @@ export default function ControlRoom() {
       )}
       {data && (
         <>
+          {navigation.systemId && !selectedAsset && <NetworkContext key={navigation.systemId} data={data} navigation={navigation} onNavigate={navigate} onIncident={focusIncident}/>}
           <div className="scene-title">
             <span className="technical-label">
               <span className="status-dot cyan" />
@@ -306,10 +307,10 @@ export default function ControlRoom() {
             </span>
             <h2>
               {navigation.facilityId
-                ? humanize(navigation.facilityId).toLowerCase()
+                ? navigation.facilityId.replace(/^.*_FACILITY_/, "Facility ")
                 : navigation.systemId
                   ? `System ${navigation.systemId}`
-                  : "The whole field. One clear view."}
+                  : "Network overview"}
             </h2>
             <p>
               {navigation.facilityId
@@ -319,20 +320,6 @@ export default function ControlRoom() {
           </div>
           <div className="scene-navigator glass">
             <Layers3 size={14} />
-            <select
-              aria-label="Navigate to system"
-              value={navigation.systemId || ""}
-              onChange={(e) =>
-                navigate(e.target.value ? { systemId: e.target.value } : {})
-              }
-            >
-              <option value="">All systems</option>
-              {data.systems.map((s) => (
-                <option key={s.id} value={s.id}>
-                  System {s.id}
-                </option>
-              ))}
-            </select>
             {navigation.systemId && (
               <select
                 aria-label="Navigate to facility"
@@ -470,8 +457,8 @@ export default function ControlRoom() {
                 <dd>Double-click / Focus button</dd>
               </dl>
               <p>
-                Use breadcrumbs to move back through the network. Equipment is
-                laid out schematically.
+                Use the header selector and Back to move through the network. Equipment is
+                laid out schematically. Recorded data and recommendations are for decision support and simulation; controls do not command equipment.
               </p>
             </div>
           )}
@@ -490,15 +477,7 @@ export default function ControlRoom() {
           )}
         </>
       )}
-      <footer className="scene-footer">
-        <span>
-          <ArrowUpRight size={10} />
-          SCHEMATIC LAYOUT · NOT GEOGRAPHIC SCALE
-        </span>
-        <span>
-          Decision support & simulation only <i>·</i> © 2026 Avon Corps
-        </span>
-      </footer>
+
     </main>
   );
 }

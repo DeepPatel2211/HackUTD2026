@@ -1,6 +1,7 @@
 "use client";
 import { AssetLabel as Html } from "./AssetLabel";
 import { useMemo } from "react";
+import Platform from "./Platform";
 import type { Asset, Dashboard, Navigation, Selection } from "../../lib/types";
 import type { FacilityLayout, SceneGraph } from "../../lib/scene-layout";
 import {
@@ -83,15 +84,8 @@ export default function FacilityScene({
   }
   return (
     <group position={layout.position}>
-      <mesh position={[0, -0.1, 0]} receiveShadow>
-        <boxGeometry args={[layout.width, 0.18, layout.depth]} />
-        <meshStandardMaterial
-          color={detailed ? "#192f3c" : "#15232e"}
-          metalness={0.15}
-          roughness={0.9}
-        />
-      </mesh>
-      {navigation.systemId === f.system_id && (
+      <Platform width={layout.width} depth={layout.depth} height={0.44} top={-0.01} color={detailed ? "#304654" : "#2a3f4d"}/>
+      {navigation.systemId === f.system_id && !detailed && (
         <Html
           center
           position={[0, 0.35, layout.depth / 2 - 0.5]}
@@ -115,8 +109,8 @@ export default function FacilityScene({
                   : colors.healthy,
               }}
             />
-            {f.id.replace(`${f.system_id}_FACILITY_`, "FACILITY ")}
-            <span>↗</span>
+            {f.id.replace(`${f.system_id}_FACILITY_`, "Facility ")}
+            <span>{incident?.category === "pump_failure" && incident.hours_to_limit != null ? `${formatValue(incident.hours_to_limit, 1)}h` : incident ? "Inspection" : "↗"}</span>
           </button>
         </Html>
       )}
@@ -198,7 +192,7 @@ export default function FacilityScene({
           [0.3, 2.6, 0.6],
           [0.3, 3.2, 0.6],
         ])}
-        {incident && incident.category !== "pipeline_leak" && (
+        {detailed && selection?.assetId !== f.pump.id && incident && incident.category !== "pipeline_leak" && (
           <Html position={[0, 2.05, -0.7]} center zIndexRange={[12, 0]}>
             <button
               className={
@@ -242,7 +236,7 @@ export default function FacilityScene({
             </mesh>
           </group>
         )}
-        {incident?.category === "pipeline_leak" && (
+        {detailed && selection?.assetId !== f.pipeline.id && incident?.category === "pipeline_leak" && (
           <Html position={[8, 1.5, -0.5]} center zIndexRange={[12, 0]}>
             <button
               className="fault-marker"

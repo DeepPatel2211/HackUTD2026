@@ -71,6 +71,7 @@ export default function AssetInspector({
     });
     return () => controller.abort();
   }, [dataset, asset.id, data.now, metricsKey]);
+  const friendlyName = asset.kind === 'disposal' ? 'Disposal site' : asset.kind === 'yard' ? 'Truck yard' : asset.id.replace(/^.*_(WELL|TANK|PUMP|PIPELINE)_/, (_, kind: string) => kind.charAt(0) + kind.slice(1).toLowerCase() + ' ');
   const plan = incident?.recommendation;
   const well = facility?.wells.find((w) => w.id === asset.id);
   const disposal = data.systems.find(
@@ -100,7 +101,7 @@ export default function AssetInspector({
                 ? "DISPOSAL SITE"
                 : asset.kind.toUpperCase()}
           </span>
-          <h1>{humanize(asset.id)}</h1>
+          <h1>{friendlyName}</h1><code className="exact-asset-id">{asset.id}</code>
           <p>
             <i style={{ background: state.color }} />
             {state.label}
@@ -160,34 +161,7 @@ export default function AssetInspector({
                 );
               })}
             </div>
-            {metric && (
-              <>
-                <div className="chart-heading">
-                  <span>{metricInfo[metric]?.label || metric}</span>
-                  <code>{metric}</code>
-                </div>
-                {errors[metric] ? (
-                  <p className="inline-error" role="alert">
-                    {errors[metric]}
-                  </p>
-                ) : loading && !readings[metric] ? (
-                  <p className="fine-print">Loading actual sensor readings…</p>
-                ) : (
-                  <SensorTrend
-                    points={readings[metric] || []}
-                    metric={metric}
-                    unit={metricInfo[metric]?.unit || ""}
-                    thresholds={
-                      metric === "level_pct" ? data.limits : undefined
-                    }
-                  />
-                )}
-              </>
-            )}
-            <p className="fine-print">
-              Sensor markers identify measured assets and metrics. Mounting
-              positions are schematic.
-            </p>
+
           </section>
         )}
         {asset.kind === "tank" && facility && (
@@ -388,6 +362,35 @@ export default function AssetInspector({
             disabled={disabled}
           />
         )}
+        {asset.metrics.length > 0 && <details className="supporting-trend inspector-section"><summary>Sensor trend & technical details</summary>
+            {metric && (
+              <>
+                <div className="chart-heading">
+                  <span>{metricInfo[metric]?.label || metric}</span>
+                  <code>{metric}</code>
+                </div>
+                {errors[metric] ? (
+                  <p className="inline-error" role="alert">
+                    {errors[metric]}
+                  </p>
+                ) : loading && !readings[metric] ? (
+                  <p className="fine-print">Loading actual sensor readings…</p>
+                ) : (
+                  <SensorTrend
+                    points={readings[metric] || []}
+                    metric={metric}
+                    unit={metricInfo[metric]?.unit || ""}
+                    thresholds={
+                      metric === "level_pct" ? data.limits : undefined
+                    }
+                  />
+                )}
+              </>
+            )}
+            <p className="fine-print">
+              Sensor markers identify measured assets and metrics. Mounting
+              positions are schematic.
+            </p>        </details>}
       </div>
     </aside>
   );
