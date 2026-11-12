@@ -218,7 +218,7 @@ def fleet_study(dataset: str, at: int | None = None,
 
 
 # --------------------------------------------------------------------------
-# Optional LLM narration over the computed result
+# Nemotron narration over the computed result. The key is required.
 # --------------------------------------------------------------------------
 
 class Investigation(BaseModel):

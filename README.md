@@ -1,13 +1,45 @@
-# NightShift AI
+# NightShift
 
-Night-shift operations console for the EOG "Beat the Shutdown" challenge. It loads a
-dataset folder, works out what is going wrong from the sensor readings alone, and
-says what to do about it at the lowest cost. Everything is advisory: nothing here
-controls real equipment.
+Night-shift console for EOG water-disposal facilities. It watches recorded sensor readings, flags a fault as soon as the data supports it, and puts the cheapest legal response on screen before a tank forces the wells offline.
+
+![alt text](image-1.png)
+
+## The problem
+
+At night, a facility problem does not wait for the next shift. A pump stops, a line starts leaking, or a pump wears down, and the tank keeps filling. If nobody sees it in time, the tank hits its shutdown limit, the wells shut in, and the facility loses oil and gas revenue until the repair is done.
+
+EOG’s night operation does not have a single place that does both jobs at once: catch the disruption as soon as it shows up in the sensors, and choose the response that loses the least money. Trucks are shared across facilities in the same system, so the cheap move for one tank can be the expensive move for the field.
+
+## The solution
+
+NightShift is an operations console for that gap. The screen shows the network, the live faults, and what to do about each one. The money decision is not left to a model.
+
+1. **Detect.** Python reads `network.json`, `ops.json`, and `telemetry.csv` and compares each sensor to the reading a healthy facility would produce. A slow leak or a wearing pump is caught from the drift, not from a late hard threshold. A failed pump is caught when flow and discharge collapse.
+2. **Price the response.** As soon as a pump failure is on the board, the planner simulates the tank and searches truck trips and early well shut-ins. It keeps the cheapest plan that stays under the shutdown limit. Facilities that share a yard are solved together, so one truck is never promised to two tanks.
+3. **Coordinate the crew.** Nemotron agents sit on top of that result. A component agent reports its own asset, a facility agent weighs the plan for that site, and a system agent covers the shared trucks. They explain the same verified numbers. They do not recalculate the plan and they do not dispatch equipment.
+
+Leaks and worn pumps still move water, so those alerts call for an inspector and do not invent a shutdown countdown.
+
+![alt text](image.png)
+
+<!-- Drop the agent panel screenshot here.
+![Agent coordination](docs/images/agents.png)
+-->
+
+## What the operator sees
+
+- Every system, facility, tank, pump, and pipeline on a schematic, with the fault highlighted.
+- A countdown band for a filling tank, and the recommended trucks, shut-ins, or decision to wait.
+- Replay of the recording, so a past moment can be inspected as if it were happening now.
+- A short shift handoff the next operator can read without opening the charts.
+
+The console is decision support. It does not command pumps, wells, or trucks. Nemotron is required for investigation and the agent panel.
+
+![alt text](image-3.png)
 
 ## Run locally
 
-Requires Python 3.10+ and Node.js 20.9+.
+Python 3.10+ and Node.js 20.9+.
 
 ```bash
 python3 -m venv .venv
@@ -21,136 +53,16 @@ In a second terminal:
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:3000. API docs at http://localhost:8000/docs.
+Open http://localhost:3000. API docs are at http://localhost:8000/docs.
 
-On Windows use `.venv/Scripts/python.exe` in place of `.venv/bin/python`.
+On Windows, use `.venv/Scripts/python.exe` instead of `.venv/bin/python`.
 
-## Switching datasets
+Any folder under `data/eog` that contains `network.json`, `ops.json`, and `telemetry.csv` appears in the dataset picker. Drop a judging `test/` folder there and switch to it. No code change.
 
-The app reads only `network.json`, `ops.json` and `telemetry.csv`. Any folder under
-`data/eog` containing those three files shows up in the dataset picker, so the
-judging `test/` folder works by dropping it in — no code change. `answer_key.json`
-is never opened by the running app; only `scripts/validate_history.py` and the
-tests read it.
-
-## How it works
-
-### Detecting the problems
-
-Every healthy reading in this network is predicted by physics that `network.json`
-already states: water arriving at the disposal site equals water the pump sent, a
-healthy pump moves its rated flow, and both pressures sit a fixed offset above the
-disposal site's. So instead of thresholding raw values, the backend subtracts the
-prediction and watches the **residual**, which is zero-mean noise when the
-equipment is healthy. Those offsets and the noise width are *learned* from the
-dataset with robust statistics, never hardcoded, so an unseen network calibrates
-itself.
-
-Each fault moves its own residuals and leaves the others alone:
-
-| Fault | Channels it moves |
-|---|---|
-| `pipeline_leak` | disposal-site arrivals, pipeline pressure |
-| `pump_degradation` | pump flow, discharge pressure |
-| `pump_failure` | pump fault status, flow to zero, discharge pressure collapses |
-
-Leaks and worn pumps **ramp from zero**, so any fixed threshold is late by
-construction. A **CUSUM** chart accumulates evidence instead, catching a
-half-sigma drift that no single reading would reveal. It also yields the two
-things a threshold cannot: a maximum-likelihood **change point**, so an event
-reports when it *started* rather than when it was noticed, and a drain-back that
-**closes** the event when the repair lands, so resolved problems leave the board.
-
-Detection is causal — the statistic at time *t* uses only data up to *t* — so
-dragging the replay slider shows exactly what an operator would have known then.
-
-### Deciding what to do
-
-A pump failure gets a costed plan. The planner replays candidate responses against
-an event-driven tank simulation and keeps the cheapest one that never reaches the
-shutdown limit. It considers every feasible truck count and trip count, jointly
-choosing dispatch times and independent shut-in times for each well. A shut-in
-only costs money while the well is off.
-
-A system's trucks are shared, so concurrent failures are solved **together**: plan
-combinations are searched against a truck timeline, and a truck committed to one
-tank is gone from the others until it is back. Leaks and worn pumps still move
-water, so they get an inspector and no countdown.
-
-The countdown itself is reported as a band (`p10`/`p50`/`p90`): tank headroom is
-exact geometry, but the fill rate is a noisy sensor sum, so its spread is carried
-through.
-
-## Measured against the answer keys
-
-Run `.venv/bin/python -m scripts.validate_history`.
-
-| Folder | Events found | Invented | Plan cost vs reference |
-|---|---|---|---|
-| `full_week` | 23 / 23 | 0 | — |
-| `snapshot_2026-10-08T1200` | 13 / 13 | 0 | $3,106 vs $3,108 |
-| `snapshot_2026-10-09T0330` | 15 / 15 | 0 | $1,810 vs $1,810 |
-| `snapshot_2026-10-10T0900` | 21 / 21 | 0 | $3,022 vs $3,095 |
-
-Alert ordering matches the key at every snapshot. Sampling the live alert board
-every 30 minutes across the week gives precision 0.984 and recall 0.935; the
-residual misses are the first hour or two of slow-ramping faults, and the residual
-false positives are repaired leaks whose pipeline has not pumped since the repair,
-so there is no flow to confirm it with.
-
-## API
-
-| Endpoint | What it returns |
-|---|---|
-| `GET /api/datasets` | Every loadable dataset folder |
-| `GET /api/dashboard?dataset=&at=` | Alerts, plans, facility state at a replay timestamp |
-| `GET /api/trend?dataset=&asset=&metric=` | One sensor channel's history |
-| `GET /api/events?dataset=&at=` | Event export in the `SPEC.md` shape, resolved history included |
-| `GET /api/handoff?dataset=&at=` | Plain-English shift brief |
-| `GET /api/fleet-study?dataset=&at=` | Cost of the live incidents at each hypothetical fleet size |
-| `POST /api/investigate` | Optional LLM narration of an already-computed result |
-
-## Verification
+## Check
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -m scripts.validate_history
 cd frontend && npm run typecheck && npm run build
 ```
-
-## Nemotron (optional)
-
-`POST /api/investigate` narrates a result through a tool-calling model. The model
-never does the maths and never sees the raw files — detection and planning happen
-in the backend, and the tools hand it only numbers already derived and verified
-here. Set `NVIDIA_API_KEY` in the backend's terminal, and optionally `NVIDIA_MODEL`.
-Without a key the endpoint returns an explicit 503 rather than pretending. The
-server does not load `.env` automatically; `.env.example` documents the variables.
-
-## Limits
-
-This is a local decision-support MVP, not a certified control system.
-
-- The planner uses one simultaneous truck group per facility with equal trip
-  counts per truck. A mixed-integer solver jointly chooses all retained truck/trip
-  options, independent well shut-in times, dispatch ordering and reusable vehicle
-  assignments. There is no cheapest-per-truck shortlist or greedy schedule. Solver
-  success is required; this is not unrestricted global field optimality.
-- Numerical clearances are 0.0036 seconds before the repair boundary and the larger
-  of 0.000001 bbl or 0.000001% of tank capacity below the shutdown limit. These are
-  numerical tolerances, not an operational safety margin. Returned actions are
-  re-simulated after the final shared-fleet schedule is assigned.
-- Simulation holds each well's currently measured water rate constant and uses the
-  fixed repair duration from `ops.json`. A tank that has already tripped stays shut
-  until the repair even if a truck drains it, as the rules require.
-- Confidence is a one-sided Gaussian tail probability on the accumulated residual.
-  It answers "is this really a fault", not "how bad will it get".
-- A repaired leak stays flagged until its pipeline pumps again, because there is no
-  reading that can clear it sooner.
-- Inspection costs are not modelled. No authentication, dispatch ledger or hosted
-  deployment is included.
-
-The included EOG data README asks for Comic Sans typography and an Avon Corps
-copyright footer; both are reflected in the dashboard.
-
-© 2026 Avon Corps.
